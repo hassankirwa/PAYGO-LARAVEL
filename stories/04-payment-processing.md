@@ -7,13 +7,20 @@
 
 ### Acceptance Criteria:
 - [ ] M-Pesa STK Push integration
+- [ ] M-Pesa Paybill/Till number payments
+- [ ] Bank debit/credit card processing
 - [ ] Real-time payment confirmation
 - [ ] Receipt generation and SMS notification
 - [ ] Payment retry mechanism for failures
-- [ ] Alternative payment methods (bank transfer)
+- [ ] Plan activation upon successful down payment
 
 ### Priority: High
 ### Status: 🔄 In Progress
+
+### Integration Points:
+- **From Story 2.4**: Receives selected plan details and quote ID
+- **To Story 5**: Triggers order creation and fulfillment process
+- **To Story 6**: Initiates IoT device activation
 
 ---
 

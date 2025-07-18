@@ -28,7 +28,11 @@ export default function HeroSection() {
 
       {/* Top Navigation with Auth Buttons */}
       <div className="absolute top-0 left-0 right-0 z-20 p-6">
-        <div className="container mx-auto flex justify-end">
+        <div className="container mx-auto flex justify-between items-center">
+          <div className="flex gap-6 text-white">
+            <Link href="/products" className="hover:text-emerald-400 transition-colors">Products</Link>
+            <Link href="/terms-and-conditions" className="hover:text-emerald-400 transition-colors">Terms</Link>
+          </div>
           <div className="flex gap-3">
             <Link href="/login">
               <Button

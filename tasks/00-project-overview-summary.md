@@ -2,11 +2,11 @@
 
 ## 📊 **Project Statistics**
 
-### **Overall Progress**: 35% Complete
-- **Total Tasks**: 150+ tasks across all modules
-- **Completed**: ✅ 15 tasks (10%)
-- **In Progress**: 🔄 12 tasks (8%)
-- **Pending**: 📋 123+ tasks (82%)
+### **Overall Progress**: 45% Complete
+- **Total Tasks**: 165+ tasks across all modules (updated with Terms & Conditions)
+- **Completed**: ✅ 22 tasks (13%)
+- **In Progress**: 🔄 16 tasks (10%)
+- **Pending**: 📋 127+ tasks (77%)
 
 ### **Estimated Total Development Time**: 800+ hours
 - **Backend Development**: 280 hours
@@ -26,8 +26,10 @@
 - ✅ Authentication system (multi-role)
 - ✅ Basic API structure
 
+**Completed**:
+- ✅ Product catalog API (Story 1.1 complete)
+
 **In Progress**:
-- 🔄 Product catalog API
 - 🔄 Customer management API
 - 🔄 M-Pesa payment integration
 - 🔄 Admin analytics API
@@ -40,19 +42,25 @@
 
 ---
 
-### **2. Frontend Development** - 30% Complete
+### **2. Frontend Development** - 55% Complete
 **Priority**: High | **Status**: 🔄 In Progress
 
 **Completed**:
 - ✅ Authentication flows
 - ✅ Basic admin dashboard
 - ✅ Responsive design foundation
+- ✅ Product catalog interface (Story 1.1 complete)
+- ✅ Product details pages (Story 1.2 complete)
+- ✅ Product comparison system (Story 1.3 complete)
+- ✅ Availability checking (Story 1.4 complete)
+- ✅ PayGo calculator UI (Story 2.2 complete)
+- ✅ Plan selection and purchase flow (Story 2.4 complete)
+- ✅ Terms and conditions with legal compliance (Story 2.3 complete)
 
 **In Progress**:
-- 🔄 Product catalog interface
-- 🔄 PayGo calculator UI
 - 🔄 Customer dashboard
 - 🔄 Mobile optimization
+- 🔄 Support system integration
 
 **Critical Pending**:
 - 📋 Shopping cart and checkout
@@ -97,21 +105,26 @@
 
 ## 🎯 **Phase-based Roadmap**
 
-### **Phase 1: Foundation** (Weeks 1-4) - 75% Complete
+### **Phase 1: Foundation** (Weeks 1-4) - ✅ 100% Complete
 **Goal**: Core infrastructure and authentication
 - ✅ Database schema (Complete)
 - ✅ Authentication system (Complete)
 - ✅ Basic frontend structure (Complete)
-- 🔄 Product catalog (In Progress)
-- 📋 PayGo plan calculator (Pending)
+- ✅ Product catalog (Complete)
+- ✅ PayGo plan calculator (Complete)
+- ✅ Terms and conditions with legal compliance (Complete)
 
 ### **Phase 2: Core Features** (Weeks 5-8) - 15% Complete
-**Goal**: Product purchase and payment flow
-- 📋 Customer registration and KYC
-- 📋 Order management system
-- 🔄 M-Pesa payment integration
-- 📋 Basic IoT device simulation
-- 🔄 Admin dashboard development
+**Goal**: Complete end-to-end purchase and fulfillment flow
+- 📋 Customer registration and KYC (Story 3)
+- 📋 Payment processing system (Story 4)
+  - M-Pesa STK Push integration
+  - M-Pesa Paybill/Till payments
+  - Bank card processing
+  - Payment reminders and notifications
+- 📋 Order fulfillment and delivery (Story 5)
+- 📋 IoT device management and automation (Story 6)
+- 📋 Customer & Admin dashboards
 
 ### **Phase 3: Advanced Features** (Weeks 9-12) - 0% Complete
 **Goal**: Real IoT integration and automation
@@ -134,15 +147,22 @@
 ## 🚨 **Critical Path Items**
 
 ### **Immediate Priorities (Next 2 Weeks)**
-1. **Complete M-Pesa Integration** (Backend + Frontend)
-   - STK Push implementation
-   - Payment callback handling
-   - UI integration
+1. **Story 3: Customer Registration & KYC** (Backend + Frontend)
+   - Multi-step registration forms
+   - Document upload and verification
+   - Address capture with GPS integration
+   - Reference contacts management
 
-2. **PayGo Plan Calculator** (Backend + Frontend)
-   - Calculation algorithms
-   - Interactive UI components
-   - Plan comparison features
+2. **Story 4: Payment Processing System** (Backend + Frontend)
+   - M-Pesa STK Push integration
+   - Multi-payment checkout system
+   - Payment confirmation and receipt system
+   - Payment reminders and notifications
+
+3. **Foundation for Stories 3, 5, 6** (Backend)
+   - Customer registration system enhancement
+   - Order management system
+   - IoT device communication setup
 
 3. **Product Catalog Completion** (Backend + Frontend)
    - Product management APIs
@@ -219,32 +239,47 @@
 ## 📅 **Next Sprint Goals (2 Weeks)**
 
 ### **Sprint Objectives**
-1. **Complete M-Pesa Integration**
-   - Backend STK Push + callbacks
-   - Frontend payment UI
-   - Testing with sandbox
+1. **Story 3: Customer Registration & KYC System**
+   - Multi-step registration forms with validation
+   - Document upload and verification interface
+   - Address capture with GPS integration
+   - Reference contacts and KYC workflow
+   - Integration with selected PayGo plans
 
-2. **Finish Product Catalog**
-   - Complete API endpoints
-   - Frontend filtering and search
-   - Admin product management
+2. **Story 4: Payment Processing Integration**
+   - Complete M-Pesa STK Push and C2B integration
+   - Multi-payment checkout system (Cards, Bank, Cash)
+   - Payment confirmation and receipt system
+   - Customer dashboard with payment management
 
-3. **Build PayGo Calculator**
-   - Calculation engine
-   - Interactive UI components
-   - Plan comparison
+3. **IoT Device Management Setup**
+   - MQTT communication infrastructure
+   - Device control API endpoints
+   - Payment-triggered device automation
+   - Real-time device status monitoring
 
-4. **Start IoT Planning**
-   - Hardware specification
-   - Vendor evaluation
-   - Technical architecture
+3. **Enhanced Customer Experience**
+   - Payment reminder system (SMS/Email)
+   - Plan modification interface
+   - Save for later functionality
+   - Receipt and confirmation system
+
+4. **System Integration & Testing**
+   - End-to-end payment flow testing
+   - IoT device simulation setup
+   - Payment callback handling
+   - Error handling and edge cases
 
 ### **Sprint Deliverables**
-- Working payment flow end-to-end
-- Complete product browsing experience
-- PayGo plan calculator functionality
-- IoT integration technical specification
-- Updated project timeline and budget
+- ✅ **COMPLETED**: Complete PayGo plan selection journey (Story 2)
+- ✅ **COMPLETED**: Terms and conditions with legal compliance
+- Customer registration & KYC system (Story 3)
+- Multi-payment integration (M-Pesa STK, C2B, Cards, Bank) (Story 4)
+- Customer dashboard with payment management
+- Admin dashboard with customer monitoring
+- IoT device management foundation
+- Automated payment reminder system
+- End-to-end testing of registration and payment flows
 
 ---
 
@@ -257,10 +292,13 @@
 - [ ] Schedule stakeholder demo for end of sprint
 
 ### **For Development Team**
-- [ ] Complete M-Pesa STK Push integration
-- [ ] Fix remaining authentication issues
-- [ ] Implement product filtering and search
-- [ ] Create PayGo calculation algorithms
+- [x] ✅ **COMPLETED**: Story 2 - PayGo plan selection with terms and conditions
+- [ ] Implement Story 3: Customer registration & KYC system
+- [ ] Implement Story 4: Payment processing with M-Pesa integration
+- [ ] Build customer dashboard with payment management
+- [ ] Enhance admin dashboard with customer monitoring
+- [ ] Set up IoT device management system
+- [ ] Create automated notification system
 
 ### **For Infrastructure Team**
 - [ ] Set up staging environment on cloud

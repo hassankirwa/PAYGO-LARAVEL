@@ -15,6 +15,15 @@
 ### Priority: High
 ### Status: ✅ Complete
 
+### Integration Points:
+- **From Story 2.4**: ✅ Receives selected plan details during registration (Story 2 Complete)
+- **To Story 4**: Passes customer details and plan info for payment processing
+- **Note**: Handles both new customer registration and existing customer login flows
+
+### Dependencies:
+- **Story 2**: ✅ Complete - PayGo plan selection and terms acceptance ready for handoff
+- **Backend Auth**: ✅ Complete - Authentication system ready for customer registration
+
 ---
 
 ## Story 3.2: Personal Information Collection

@@ -1,0 +1,447 @@
+# KOYO PayGo Platform - Cursor AI Agent Rules
+
+## 🎯 Project Overview
+This is the KOYO PayGo Platform - an IoT-enabled payment system for freezers/refrigerators with flexible installment plans.
+
+**Tech Stack:**
+- **Backend**: Laravel 12.0 (PHP 8.2) + Sanctum Authentication
+- **Frontend**: Next.js 15.2.4 + TypeScript + Tailwind CSS + Radix UI
+- **Database**: MySQL (via Laravel migrations)
+- **IoT**: MQTT messaging for device control
+- **Payments**: M-Pesa integration
+
+## 📋 Task & Story Status Checking
+
+### 1. Task Status Location & Format
+```
+📁 tasks/
+├── 00-project-overview-summary.md      # Overall project status
+├── 01-backend-development-tasks.md     # Laravel API tasks
+├── 02-frontend-development-tasks.md    # Next.js UI tasks
+├── 03-iot-integration-tasks.md         # IoT & hardware tasks
+└── 04-devops-infrastructure-tasks.md   # Cloud & deployment tasks
+```
+
+### 2. User Stories Location & Format
+```
+📁 stories/
+├── 01-customer-product-discovery.md
+├── 02-paygo-plan-selection.md
+├── 03-customer-registration-kyc.md
+├── 04-payment-processing.md
+├── 05-order-fulfillment-delivery.md
+├── 06-iot-subscription-management.md
+└── 07-admin-staff-management.md
+```
+
+### 3. Status Symbols & Meanings
+- ✅ **Complete** - Task/story fully implemented and tested
+- 🔄 **In Progress** - Currently being worked on
+- 📋 **Pending** - Not yet started, in backlog
+
+### 4. How to Check Status Before Starting Work
+```bash
+# 1. Check overall project status
+read tasks/00-project-overview-summary.md
+
+# 2. Check specific module status
+read tasks/01-backend-development-tasks.md   # For Laravel work
+read tasks/02-frontend-development-tasks.md  # For Next.js work
+
+# 3. Check related user stories
+read stories/[relevant-story-file].md
+
+# 4. Search for existing implementations
+codebase_search "How is [feature] currently implemented?"
+grep_search "[feature-name]" --include="*.php" --include="*.tsx"
+```
+
+## 🔧 Laravel Backend Implementation Steps
+
+### 1. Pre-Implementation Checklist
+```bash
+# Navigate to backend directory
+cd paygo-backend
+
+# Check Laravel setup
+php artisan --version
+composer install
+php artisan key:generate
+
+# Check database connection
+php artisan migrate:status
+
+# Check current routes
+php artisan route:list
+```
+
+### 2. Feature Development Workflow
+
+#### Step 1: Model & Migration
+```bash
+# Create model with migration
+php artisan make:model [ModelName] -m
+
+# Edit migration file in database/migrations/
+# Run migration
+php artisan migrate
+
+# Create factory and seeder if needed
+php artisan make:factory [ModelName]Factory
+php artisan make:seeder [ModelName]Seeder
+```
+
+#### Step 2: API Controller
+```bash
+# Create API controller
+php artisan make:controller Api/[ModelName]Controller --api
+
+# Follow this structure:
+# - index() - List resources with pagination/filtering
+# - store() - Create new resource with validation
+# - show($id) - Get single resource
+# - update($id) - Update resource with validation
+# - destroy($id) - Delete resource
+```
+
+#### Step 3: Form Requests & Validation
+```bash
+# Create form request for validation
+php artisan make:request [ModelName]Request
+
+# Add validation rules in app/Http/Requests/
+```
+
+#### Step 4: Routes
+```php
+// Add to routes/api.php
+Route::apiResource('[route-name]', [ModelName]Controller::class);
+
+// For protected routes, use Sanctum middleware:
+Route::middleware('auth:sanctum')->group(function () {
+    Route::apiResource('[route-name]', [ModelName]Controller::class);
+});
+```
+
+#### Step 5: Testing
+```bash
+# Create test file
+php artisan make:test [ModelName]Test
+
+# Run tests
+php artisan test --filter=[TestName]
+php artisan test tests/Feature/[ModelName]Test.php
+```
+
+### 3. Key Laravel Patterns for This Project
+
+#### Authentication & Authorization
+```php
+// Use Sanctum for API authentication
+// Multi-role system: customer, admin, staff, iot_device
+
+// In models, use roles:
+public function hasRole($role) {
+    return $this->role === $role;
+}
+
+// In controllers, check permissions:
+if (!auth()->user()->hasRole('admin')) {
+    return response()->json(['error' => 'Unauthorized'], 403);
+}
+```
+
+#### PayGo Plan Calculations
+```php
+// Create dedicated service classes for complex business logic
+app/Services/PayGoPlanCalculator.php
+app/Services/PaymentProcessor.php
+app/Services/IoTDeviceController.php
+```
+
+#### M-Pesa Integration
+```php
+// Create dedicated payment service
+app/Services/MpesaPaymentService.php
+
+// Use Laravel queues for async payment processing
+php artisan make:job ProcessMpesaPayment
+```
+
+## ⚛️ Next.js Frontend Implementation Steps
+
+### 1. Pre-Implementation Checklist
+```bash
+# Navigate to frontend directory
+cd paygo-frontend
+
+# Install dependencies
+# npm install
+
+# Start development server
+npm run dev
+
+# Check if running on http://localhost:3000
+```
+
+### 2. Feature Development Workflow
+
+#### Step 1: Create Component Structure
+```bash
+# Component file structure:
+src/
+├── app/                    # App Router pages
+├── components/
+│   ├── ui/                # Radix UI components (Button, Input, etc.)
+│   ├── forms/             # Form components
+│   ├── dashboard/         # Dashboard components
+│   └── paygo/             # PayGo specific components
+├── lib/
+│   ├── api.ts             # API client functions
+│   ├── utils.ts           # Utility functions
+│   └── validations.ts     # Zod schemas
+└── hooks/                 # Custom React hooks
+```
+
+#### Step 2: API Integration
+```typescript
+// Create API functions in lib/api.ts
+export async function fetchProducts() {
+  const response = await fetch('/api/products');
+  return response.json();
+}
+
+// Use React Query or SWR for data fetching
+import useSWR from 'swr';
+
+function ProductList() {
+  const { data, error } = useSWR('/api/products', fetchProducts);
+  // ... component logic
+}
+```
+
+#### Step 3: Form Implementation
+```typescript
+// Use react-hook-form with Zod validation
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+const schema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  email: z.string().email('Invalid email'),
+});
+
+function MyForm() {
+  const form = useForm({
+    resolver: zodResolver(schema),
+  });
+  // ... form logic
+}
+```
+
+#### Step 4: Component Development
+```typescript
+// Use TypeScript interfaces for props
+interface ProductCardProps {
+  product: Product;
+  onSelect: (productId: string) => void;
+}
+
+// Use Tailwind CSS for styling
+// Use Radix UI components for complex interactions
+// Follow the existing component patterns in components/ui/
+```
+
+#### Step 5: Page Implementation
+```typescript
+// Use App Router in src/app/
+// Follow this structure:
+app/
+├── (auth)/           # Auth-protected routes
+├── admin/           # Admin dashboard
+├── client/        # Customer dashboard
+├── products/        # Product catalog
+└── paygo/          # PayGo plan selection
+```
+
+### 3. Key Next.js Patterns for This Project
+
+#### Authentication State Management
+```typescript
+// Create auth context/hook
+// Use Zustand or Context API for global state
+// Implement role-based routing protection
+```
+
+#### PayGo Calculator Components
+```typescript
+// Create reusable calculator components
+components/paygo/PlanCalculator.tsx
+components/paygo/PaymentSchedule.tsx
+components/paygo/PlanComparison.tsx
+```
+
+#### Dashboard Components
+```typescript
+// Use Recharts for analytics
+// Implement real-time updates for IoT status
+// Create responsive data tables
+```
+
+## 🧪 Testing Guidelines
+
+### 1. Backend Testing
+```bash
+# Run Laravel tests
+cd paygo-backend
+php artisan test
+
+# Test specific features
+php artisan test --filter=PayGoTest
+php artisan test tests/Feature/PaymentTest.php
+
+# Generate test coverage
+php artisan test --coverage
+```
+
+### 2. Frontend Testing with Browser MCP
+```bash
+# Start frontend development server
+cd paygo-frontend
+npm run dev
+
+# Note: Never use && in terminal commands, use ; instead
+npm install ; npm run dev
+```
+
+**Browser MCP Testing Workflow:**
+1. Start the frontend server: `npm run dev`
+2. Open browser at the running port (usually http://localhost:3000)
+3. Use browsermcp tools to navigate and test the frontend
+4. Test user flows: registration, product selection, payment, dashboard
+5. Verify responsive design and component interactions
+
+### 3. Integration Testing
+```bash
+# Test API endpoints with Laravel backend running
+cd paygo-backend
+php artisan serve
+
+# Test frontend API integration
+cd paygo-frontend
+npm run dev
+
+# Use browsermcp to test full user journeys
+```
+
+## 📝 Development Best Practices
+
+### 1. Code Quality
+- Follow PSR-12 for PHP code formatting
+- Use TypeScript strict mode for frontend
+- Implement proper error handling and validation
+- Add comprehensive logging for debugging
+
+### 2. Security
+- Use Sanctum tokens for API authentication
+- Implement CSRF protection
+- Validate all user inputs
+- Use environment variables for sensitive data
+
+### 3. Performance
+- Implement database indexing for search/filter operations
+- Use Laravel caching for frequently accessed data
+- Optimize Next.js builds and implement lazy loading
+- Use pagination for large data sets
+
+### 4. Git Workflow
+```bash
+# Create feature branches
+git checkout -b feature/[task-name]
+
+# Make atomic commits with clear messages
+git commit -m "feat: implement PayGo plan calculator API"
+
+# Update task status after completion
+# Edit relevant task file and change 📋 to 🔄 or ✅
+```
+
+### 5. Documentation Updates
+```bash
+# After implementing a feature:
+# 1. Update task status in tasks/ directory
+# 2. Update user story status in stories/ directory
+# 3. Update project overview in tasks/00-project-overview-summary.md
+# 4. Add implementation notes and any gotchas
+```
+
+## 🚀 Priority Implementation Order
+
+### Phase 1: Core Backend APIs
+1. User authentication & role management
+2. Product catalog API
+3. PayGo plan calculator engine
+4. M-Pesa payment integration
+
+### Phase 2: Core Frontend Components
+1. Authentication flows & dashboard layouts
+2. Product catalog with search/filter
+3. PayGo plan selection interface
+4. Payment processing forms
+
+### Phase 3: Advanced Features
+1. IoT device management
+2. Admin analytics dashboard
+3. Order fulfillment system
+4. Notification system
+
+## 🔍 Debugging & Troubleshooting
+
+### Laravel Debugging
+```bash
+# Check logs
+tail -f storage/logs/laravel.log
+
+# Debug routes
+php artisan route:list | grep [route-name]
+
+# Debug database
+php artisan tinker
+>>> User::count()
+>>> DB::connection()->getPdo()
+```
+
+### Next.js Debugging
+```bash
+# Check browser console for errors
+# Use React Developer Tools
+# Check network tab for API call failures
+# Use Next.js built-in debugging tools
+```
+
+## 📞 When to Ask for Help
+- If task status is unclear or conflicting
+- If user story acceptance criteria are ambiguous
+- If you need clarification on business logic for PayGo calculations
+- If IoT integration details are required
+- If M-Pesa API credentials or documentation is needed
+
+Remember: Always check existing implementations and update task status after completing work! 
+
+**IMPORTANT:**
+- Always check existing implementations and update task status after completing work! 
+- keep the code simple and readable, avoid complex code and use the existing code as a reference.
+- keep the code DRY (Don't Repeat Yourself)
+- keep the code modular and reusable
+- keep the code maintainable and scalable
+- keep the code secure and bug-free
+- keep the code efficient and fast
+- keep the code consistent and readable
+- keep the code maintainable and scalable
+- keep the code secure and bug-free
+- keep the current theme and design of the website.
+- keep the current structure of the website.
+
+- keep the current user experience of the website.
+- use browser mcp to test the website frontend after each implementation.
