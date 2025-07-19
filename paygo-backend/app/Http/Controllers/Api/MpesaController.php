@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Carbon\Carbon;
 use App\Models\MpesaTransaction;
+use App\Models\SystemSetting;
 use Illuminate\Support\Facades\Log;
 
 class MpesaController extends Controller
@@ -16,10 +17,18 @@ class MpesaController extends Controller
      */
     public function generateAccessToken()
     {
-        $consumer_key    = env('CONSUMER_KEY');
-        $consumer_secret = env('CONSUMER_SECRET');
+        $config = SystemSetting::getMpesaConfig();
+        
+        $consumer_key    = $config['consumer_key'];
+        $consumer_secret = $config['consumer_secret'];
+        
+        if (!$consumer_key || !$consumer_secret) {
+            Log::error('M-Pesa credentials not configured');
+            return null;
+        }
+        
         $credentials     = base64_encode("{$consumer_key}:{$consumer_secret}");
-        $url             = env('MPESA_ENV') === 'production'
+        $url             = $config['environment'] === 'production'
                          ? 'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials'
                          : 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
 
@@ -44,9 +53,11 @@ class MpesaController extends Controller
      */
     public function generatePassword()
     {
+        $config = SystemSetting::getMpesaConfig();
+        
         $timestamp    = Carbon::now()->format('YmdHms');
-        $shortcode    = env('BUSINESS_SHORTCODE');
-        $passkey      = env('PASS_KEY');
+        $shortcode    = $config['shortcode'];
+        $passkey      = $config['passkey'];
         $password     = base64_encode($shortcode . $passkey . $timestamp);
 
         return response()->json([
@@ -61,17 +72,18 @@ class MpesaController extends Controller
      */
     public function mpesaRegisterUrls()
     {
+        $config = SystemSetting::getMpesaConfig();
         $token = $this->generateAccessToken();
 
-        $url = env('MPESA_ENV') === 'production'
+        $url = $config['environment'] === 'production'
              ? 'https://api.safaricom.co.ke/mpesa/c2b/v1/registerurl'
              : 'https://sandbox.safaricom.co.ke/mpesa/c2b/v1/registerurl';
 
         $payload = [
-            'ShortCode'       => env('BUSINESS_SHORTCODE'),
+            'ShortCode'       => $config['shortcode'],
             'ResponseType'    => 'Completed',
-            'ConfirmationURL' => env('CONFIRMATION_URL'),
-            'ValidationURL'   => env('VALIDATION_URL'),
+            'ConfirmationURL' => $config['confirmation_url'],
+            'ValidationURL'   => $config['validation_url'],
         ];
 
         $curl = curl_init($url);
@@ -133,6 +145,7 @@ class MpesaController extends Controller
             'transaction_desc' => 'required|string'
         ]);
 
+        $config = SystemSetting::getMpesaConfig();
         $token = $this->generateAccessToken();
         
         if (!$token) {
@@ -147,11 +160,11 @@ class MpesaController extends Controller
         
         // Generate timestamp and password
         $timestamp = Carbon::now()->format('YmdHms');
-        $shortcode = env('BUSINESS_SHORTCODE');
-        $passkey = env('PASS_KEY');
+        $shortcode = $config['shortcode'];
+        $passkey = $config['passkey'];
         $password = base64_encode($shortcode . $passkey . $timestamp);
 
-        $url = env('MPESA_ENV') === 'production'
+        $url = $config['environment'] === 'production'
              ? 'https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest'
              : 'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest';
 
@@ -164,7 +177,7 @@ class MpesaController extends Controller
             'PartyA' => $phoneNumber,
             'PartyB' => $shortcode,
             'PhoneNumber' => $phoneNumber,
-            'CallBackURL' => env('STK_CALLBACK_URL', url('/api/mpesa/stk-callback')),
+            'CallBackURL' => $config['callback_url'] ?? url('/api/mpesa/stk-callback'),
             'AccountReference' => $request->account_reference,
             'TransactionDesc' => $request->transaction_desc
         ];
@@ -301,6 +314,7 @@ class MpesaController extends Controller
             'checkout_request_id' => 'required|string'
         ]);
 
+        $config = SystemSetting::getMpesaConfig();
         $token = $this->generateAccessToken();
         
         if (!$token) {
@@ -311,11 +325,11 @@ class MpesaController extends Controller
         }
 
         $timestamp = Carbon::now()->format('YmdHms');
-        $shortcode = env('BUSINESS_SHORTCODE');
-        $passkey = env('PASS_KEY');
+        $shortcode = $config['shortcode'];
+        $passkey = $config['passkey'];
         $password = base64_encode($shortcode . $passkey . $timestamp);
 
-        $url = env('MPESA_ENV') === 'production'
+        $url = $config['environment'] === 'production'
              ? 'https://api.safaricom.co.ke/mpesa/stkpushquery/v1/query'
              : 'https://sandbox.safaricom.co.ke/mpesa/stkpushquery/v1/query';
 
@@ -347,6 +361,155 @@ class MpesaController extends Controller
             'success' => true,
             'data' => $data
         ]);
+    }
+
+    /**
+     * C2B Simulate Transaction (Till Number)
+     */
+    public function c2bSimulate(Request $request)
+    {
+        $request->validate([
+            'phone_number' => 'required|string',
+            'amount' => 'required|numeric|min:1',
+            'account_reference' => 'required|string',
+            'bill_ref_number' => 'sometimes|string',
+        ]);
+
+        $config = SystemSetting::getMpesaConfig();
+        $token = $this->generateAccessToken();
+        
+        if (!$token) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to generate access token'
+            ], 500);
+        }
+
+        // Format phone number
+        $phoneNumber = $this->formatPhoneNumber($request->phone_number);
+        
+        $url = $config['environment'] === 'production'
+             ? 'https://api.safaricom.co.ke/mpesa/c2b/v1/simulate'
+             : 'https://sandbox.safaricom.co.ke/mpesa/c2b/v1/simulate';
+
+        $payload = [
+            'ShortCode' => $config['shortcode'],
+            'CommandID' => 'CustomerPayBillOnline', // or CustomerBuyGoodsOnline for Till
+            'Amount' => $request->amount,
+            'Msisdn' => $phoneNumber,
+            'BillRefNumber' => $request->bill_ref_number ?? $request->account_reference,
+        ];
+
+        $curl = curl_init($url);
+        curl_setopt_array($curl, [
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                "Authorization: Bearer {$token}"
+            ],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_SSL_VERIFYPEER => false,
+        ]);
+
+        $response = curl_exec($curl);
+        $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        curl_close($curl);
+
+        $data = json_decode($response, true);
+        
+        if ($httpCode == 200) {
+            Log::info('C2B Simulation successful:', $data);
+            return response()->json([
+                'success' => true,
+                'message' => 'C2B transaction simulated successfully',
+                'data' => $data
+            ]);
+        } else {
+            Log::error('C2B Simulation Error:', $data);
+            return response()->json([
+                'success' => false,
+                'error' => $data['errorMessage'] ?? 'C2B simulation failed',
+                'error_code' => $data['errorCode'] ?? null
+            ], 400);
+        }
+    }
+
+    /**
+     * C2B Till Number Payment (CustomerBuyGoodsOnline)
+     */
+    public function c2bTillPayment(Request $request)
+    {
+        $request->validate([
+            'phone_number' => 'required|string',
+            'amount' => 'required|numeric|min:1',
+            'till_number' => 'required|string',
+            'account_reference' => 'sometimes|string',
+        ]);
+
+        $config = SystemSetting::getMpesaConfig();
+        $token = $this->generateAccessToken();
+        
+        if (!$token) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to generate access token'
+            ], 500);
+        }
+
+        // Format phone number
+        $phoneNumber = $this->formatPhoneNumber($request->phone_number);
+        
+        $url = $config['environment'] === 'production'
+             ? 'https://api.safaricom.co.ke/mpesa/c2b/v1/simulate'
+             : 'https://sandbox.safaricom.co.ke/mpesa/c2b/v1/simulate';
+
+        $payload = [
+            'ShortCode' => $request->till_number,
+            'CommandID' => 'CustomerBuyGoodsOnline', // Till Number command
+            'Amount' => $request->amount,
+            'Msisdn' => $phoneNumber,
+            'BillRefNumber' => $request->account_reference ?? 'TILL-' . time(),
+        ];
+
+        $curl = curl_init($url);
+        curl_setopt_array($curl, [
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                "Authorization: Bearer {$token}"
+            ],
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode($payload),
+            CURLOPT_SSL_VERIFYPEER => false,
+        ]);
+
+        $response = curl_exec($curl);
+        $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        curl_close($curl);
+
+        $data = json_decode($response, true);
+        
+        if ($httpCode == 200) {
+            Log::info('C2B Till Payment successful:', $data);
+            return response()->json([
+                'success' => true,
+                'message' => 'Till payment processed successfully',
+                'data' => [
+                    'till_number' => $request->till_number,
+                    'amount' => $request->amount,
+                    'phone_number' => $phoneNumber,
+                    'response' => $data
+                ]
+            ]);
+        } else {
+            Log::error('C2B Till Payment Error:', $data);
+            return response()->json([
+                'success' => false,
+                'error' => $data['errorMessage'] ?? 'Till payment failed',
+                'error_code' => $data['errorCode'] ?? null
+            ], 400);
+        }
     }
 
     /**

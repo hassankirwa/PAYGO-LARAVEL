@@ -11,6 +11,8 @@ use App\Http\Controllers\Api\AdminDashboardController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PayGoPlanController;
 use App\Http\Controllers\Api\MpesaController;
+use App\Http\Controllers\Api\CustomerController;
+use App\Http\Controllers\Api\SettingsController;
 use Illuminate\Support\Facades\Hash;
 
 // Test client creation directly
@@ -133,6 +135,48 @@ Route::prefix('admin')->group(function () {
 });
 
 // ==============================================
+// CLIENT AUTHENTICATION ROUTES
+// ==============================================
+Route::prefix('client')->group(function () {
+    Route::post('/login', [ClientAuthController::class, 'login']);
+    Route::post('/register', [ClientAuthController::class, 'register']);
+    
+    Route::middleware('auth:client')->group(function () {
+        Route::post('/logout', [ClientAuthController::class, 'logout']);
+        Route::get('/profile', [ClientProfileController::class, 'getProfile']);
+        Route::put('/profile', [ClientProfileController::class, 'updateProfile']);
+        Route::post('/upload-avatar', [ClientProfileController::class, 'uploadAvatar']);
+    });
+});
+
+// ==============================================
+// CUSTOMER KYC ROUTES (Story 3 Implementation)
+// ==============================================
+Route::prefix('customer')->group(function () {
+    // Customer registration (Story 3.1) - Public route for initial registration
+    Route::post('/register', [CustomerController::class, 'register']);
+    
+    // Protected KYC routes - require authentication
+    Route::middleware('auth:client')->group(function () {
+        // Personal Information Collection (Story 3.2)
+        Route::put('/personal-info', [CustomerController::class, 'updatePersonalInfo']);
+        
+        // Business Information Collection (Story 3.3)
+        Route::put('/business-info', [CustomerController::class, 'updateBusinessInfo']);
+        
+        // Reference and Emergency Contacts (Story 3.4)
+        Route::put('/contacts', [CustomerController::class, 'updateContacts']);
+        
+        // Document Upload and Verification (Story 3.6)
+        Route::post('/documents', [CustomerController::class, 'uploadDocuments']);
+        
+        // KYC Status and Progress Tracking
+        Route::get('/kyc-status', [CustomerController::class, 'getKycStatus']);
+        Route::post('/submit-kyc', [CustomerController::class, 'submitForReview']);
+    });
+});
+
+// ==============================================
 // CLIENT PROFILE ROUTES (Protected)
 // ==============================================
 Route::middleware('auth:sanctum')->prefix('client')->group(function () {
@@ -207,6 +251,8 @@ Route::prefix('mpesa')->group(function () {
     Route::post('register-urls', [MpesaController::class, 'mpesaRegisterUrls']); // Register validation and confirmation URLs
     Route::post('validation', [MpesaController::class, 'mpesaValidation']); // Validation endpoint (called by Safaricom)
     Route::post('confirmation', [MpesaController::class, 'mpesaConfirmation']); // Confirmation endpoint (called by Safaricom)
+    Route::post('c2b-simulate', [MpesaController::class, 'c2bSimulate']); // C2B transaction simulation
+    Route::post('c2b-till', [MpesaController::class, 'c2bTillPayment']); // C2B Till Number payment
     
     // Utility routes
     Route::post('access-token', [MpesaController::class, 'generateAccessToken']); // Generate access token
@@ -226,5 +272,16 @@ Route::prefix('sts')->group(function () {
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
+    });
+    
+    // Admin Settings Routes
+    Route::prefix('admin/settings')->group(function () {
+        Route::get('/', [SettingsController::class, 'getSettings']); // Get all settings
+        Route::get('/{category}', [SettingsController::class, 'getSettings']); // Get settings by category
+        
+        // M-Pesa specific routes
+        Route::get('/mpesa/config', [SettingsController::class, 'getMpesaSettings']); // Get M-Pesa settings
+        Route::post('/mpesa/config', [SettingsController::class, 'updateMpesaSettings']); // Update M-Pesa settings
+        Route::post('/mpesa/test', [SettingsController::class, 'testMpesaConnection']); // Test M-Pesa connection
     });
 }); 

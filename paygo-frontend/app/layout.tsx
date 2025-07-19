@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { ComparisonProvider } from '@/lib/comparison'
+import { Toaster } from '@/components/ui/toaster'
 
 export const metadata: Metadata = {
   title: 'KOYO PayGo Platform',
@@ -19,6 +20,7 @@ export default function RootLayout({
         <ComparisonProvider>
           {children}
         </ComparisonProvider>
+        <Toaster />
       </body>
     </html>
   )

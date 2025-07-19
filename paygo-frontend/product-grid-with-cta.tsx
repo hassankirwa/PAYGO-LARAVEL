@@ -14,8 +14,11 @@ import { Slider } from "@/components/ui/slider"
 import { Phone, Mail, MapPin, Clock, Send, Search, Filter, Loader2, Scale } from "lucide-react"
 import { productApi, type Product, type ProductCategory, type ProductFilters, convertLaravelProduct } from "@/lib/api"
 import { useComparison } from "@/lib/comparison"
+import { useToast } from "@/hooks/use-toast"
 
 export default function ProductGridWithCTA() {
+  const { toast } = useToast()
+  
   // State for products and filters
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<ProductCategory[]>([])
@@ -120,7 +123,11 @@ export default function ProductGridWithCTA() {
       }
     } catch (err) {
       console.error('Error fetching products:', err)
-      setError('Failed to load products. Please try again.')
+      toast({
+        title: "Error Loading Products",
+        description: "Failed to load products. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
@@ -163,7 +170,11 @@ export default function ProductGridWithCTA() {
 
   const handleContactSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    alert('Thank you for your message! We will get back to you soon.')
+    toast({
+      title: "Message Sent! ✉️",
+      description: "Thank you for your message! We will get back to you soon.",
+      variant: "default",
+    })
   }
 
   const clearFilters = () => {
@@ -315,16 +326,8 @@ export default function ProductGridWithCTA() {
             </div>
           )}
 
-          {/* Error State */}
-          {error && (
-            <div className="text-center py-12">
-              <p className="text-red-600 mb-4">{error}</p>
-              <Button onClick={fetchProducts}>Try Again</Button>
-            </div>
-          )}
-
           {/* Products Grid */}
-          {!loading && !error && (
+          {!loading && (
             <div className="grid grid-cols-1 gap-8">
               {products.length === 0 ? (
                 <div className="text-center py-12">
@@ -437,7 +440,7 @@ export default function ProductGridWithCTA() {
           )}
 
           {/* Pagination */}
-          {!loading && !error && products.length > 0 && (
+          {!loading && products.length > 0 && (
             <div className="flex justify-center mt-8">
               <div className="flex gap-2">
                 <Button

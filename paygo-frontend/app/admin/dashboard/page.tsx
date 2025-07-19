@@ -42,8 +42,10 @@ import GenerateReportModal from "@/components/generate-report-modal"
 import { ProfileSettingsModal } from "@/components/profile-settings-modal"
 import { PreferencesModal } from "@/components/preferences-modal"
 import { AdminDashboardCards } from "@/components/admin-dashboard-cards"
+import { useToast } from "@/hooks/use-toast"
 
 export default function AdminDashboard() {
+  const { toast } = useToast()
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
@@ -149,7 +151,11 @@ export default function AdminDashboard() {
   const handleToggleAppliance = (clientId: number, currentStatus: string) => {
     const action = currentStatus === "active" ? "suspend" : "activate"
     if (confirm(`Are you sure you want to ${action} this appliance?`)) {
-      alert(`Appliance ${action}d successfully!`)
+      toast({
+        title: `Appliance ${action.charAt(0).toUpperCase() + action.slice(1)}! 🔌`,
+        description: `Appliance ${action}d successfully!`,
+        variant: "default",
+      })
     }
   }
 

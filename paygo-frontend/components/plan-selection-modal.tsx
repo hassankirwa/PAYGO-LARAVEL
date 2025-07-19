@@ -11,6 +11,7 @@ import { AlertCircle, Calendar, CreditCard, DollarSign, FileText, ShoppingCart }
 import { PayGoPlan, Product, formatPrice, formatInstallment, formatDuration } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { useToast } from "@/hooks/use-toast"
 
 interface PlanSelectionModalProps {
   plan: PayGoPlan
@@ -23,6 +24,7 @@ export default function PlanSelectionModal({ plan, product, isOpen, onOpenChange
   const [acceptTerms, setAcceptTerms] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const router = useRouter()
+  const { toast } = useToast()
 
   const handleSaveForLater = () => {
     // Generate unique plan reference
@@ -43,13 +45,21 @@ export default function PlanSelectionModal({ plan, product, isOpen, onOpenChange
     localStorage.setItem('saved_paygo_plans', JSON.stringify(savedPlans))
     
     // Show success message
-    alert(`Plan saved for later! Reference: ${planReference}\nValid for 7 days.`)
+    toast({
+      title: "Plan Saved! 💾",
+      description: `Plan saved for later! Reference: ${planReference}\nValid for 7 days.`,
+      variant: "default",
+    })
     onOpenChange(false)
   }
 
   const handleProceedToPurchase = async () => {
     if (!acceptTerms) {
-      alert('Please accept the terms and conditions to proceed.')
+      toast({
+        title: "Terms Required",
+        description: "Please accept the terms and conditions to proceed.",
+        variant: "destructive",
+      })
       return
     }
 
@@ -81,7 +91,11 @@ export default function PlanSelectionModal({ plan, product, isOpen, onOpenChange
       
     } catch (error) {
       console.error('Error initiating purchase:', error)
-      alert('Something went wrong. Please try again.')
+      toast({
+        title: "Error",
+        description: "Something went wrong. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setIsProcessing(false)
     }

@@ -33,13 +33,23 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import { useToast } from "@/hooks/use-toast"
 
 export default function TermsAndConditionsPage() {
+  const { toast } = useToast()
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false)
   const [acceptedIoT, setAcceptedIoT] = useState(false)
 
   const allAccepted = acceptedTerms && acceptedPrivacy && acceptedIoT
+
+  const handleAcceptTerms = () => {
+    toast({
+      title: "Terms Accepted! ✅",
+      description: "Terms accepted successfully! You can now proceed with your PayGo plan.",
+      variant: "default",
+    })
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -761,18 +771,7 @@ export default function TermsAndConditionsPage() {
                 <Button
                   className={`flex-1 ${allAccepted ? 'bg-green-600 hover:bg-green-700' : 'bg-gray-400'}`}
                   disabled={!allAccepted}
-                  onClick={() => {
-                    if (allAccepted) {
-                      // Store acceptance in localStorage with timestamp
-                      const acceptance = {
-                        accepted: true,
-                        timestamp: new Date().toISOString(),
-                        terms_version: '1.0'
-                      }
-                      localStorage.setItem('koyo_terms_acceptance', JSON.stringify(acceptance))
-                      alert('Terms accepted successfully! You can now proceed with your PayGo plan.')
-                    }
-                  }}
+                  onClick={handleAcceptTerms}
                 >
                   {allAccepted ? (
                     <>

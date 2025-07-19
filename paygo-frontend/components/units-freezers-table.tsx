@@ -8,8 +8,10 @@ import { Input } from "@/components/ui/input"
 import { Power, PowerOff, Refrigerator, Search, Filter, Thermometer, Battery } from "lucide-react"
 import { appliances } from "@/lib/appliances"
 import { AnalyticsCard } from "./analytics-card"
+import { useToast } from "@/hooks/use-toast"
 
 export function UnitsFreezersTable() {
+  const { toast } = useToast()
   const [searchTerm, setSearchTerm] = useState("")
   const [filterStatus, setFilterStatus] = useState("all")
   const [sortColumn, setSortColumn] = useState<string | null>(null)
@@ -57,7 +59,11 @@ export function UnitsFreezersTable() {
   const handleToggleUnit = (unitId: string, currentStatus: string) => {
     const action = currentStatus === "active" ? "turn off" : "turn on"
     if (confirm(`Are you sure you want to ${action} unit ${unitId}?`)) {
-      alert(`Unit ${unitId} ${action === "turn off" ? "turned off" : "turned on"} successfully!`)
+      toast({
+      title: `Unit ${action === "turn off" ? "Turned Off" : "Turned On"}! 🔌`,
+      description: `Unit ${unitId} ${action === "turn off" ? "turned off" : "turned on"} successfully!`,
+      variant: "default",
+    })
     }
   }
 

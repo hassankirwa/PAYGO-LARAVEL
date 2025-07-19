@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,19 +36,163 @@ import {
   Eye,
   EyeOff
 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 export function SettingsSection() {
+  const { toast } = useToast()
   const [activeTab, setActiveTab] = useState("payment")
   const [showApiKeys, setShowApiKeys] = useState(false)
   const [showMpesaKeys, setShowMpesaKeys] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [testingConnection, setTestingConnection] = useState(false)
+
+  // M-Pesa Settings State
+  const [mpesaSettings, setMpesaSettings] = useState({
+    environment: "sandbox",
+    shortcode: "174379",
+    consumer_key: "",
+    consumer_secret: "",
+    passkey: "",
+    callback_url: "",
+  })
+
+  // Load M-Pesa settings on component mount
+  useEffect(() => {
+    loadMpesaSettings()
+  }, [])
+
+  const loadMpesaSettings = async () => {
+    try {
+      const token = localStorage.getItem('admin_token')
+      if (!token) return
+
+      const response = await fetch('/api/admin/settings/mpesa/config', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          setMpesaSettings(prev => ({
+            ...prev,
+            ...data.data
+          }))
+        }
+      }
+    } catch (error) {
+      console.log('Failed to load M-Pesa settings:', error)
+    }
+  }
+
+  const handleSaveMpesaSettings = async () => {
+    setIsLoading(true)
+    try {
+      const token = localStorage.getItem('admin_token')
+      if (!token) {
+        toast({
+          title: "Authentication Error",
+          description: "Please log in again",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const response = await fetch('/api/admin/settings/mpesa/config', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(mpesaSettings),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        toast({
+          title: "M-Pesa Settings Saved! ✅",
+          description: `M-Pesa configuration updated for ${mpesaSettings.environment} environment`,
+          variant: "default",
+        })
+      } else {
+        throw new Error(data.error || 'Failed to save settings')
+      }
+    } catch (error) {
+      toast({
+        title: "Save Failed ❌",
+        description: error instanceof Error ? error.message : "Failed to save M-Pesa settings",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleTestMpesaConnection = async () => {
+    setTestingConnection(true)
+    try {
+      const token = localStorage.getItem('admin_token')
+      if (!token) {
+        toast({
+          title: "Authentication Error",
+          description: "Please log in again",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const response = await fetch('/api/admin/settings/mpesa/test', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        toast({
+          title: "Connection Successful! 🎉",
+          description: `M-Pesa API connection verified for ${data.data.environment} environment`,
+          variant: "default",
+        })
+      } else {
+        throw new Error(data.error || data.details || 'Connection test failed')
+      }
+    } catch (error) {
+      toast({
+        title: "Connection Failed ❌",
+        description: error instanceof Error ? error.message : "Failed to connect to M-Pesa API",
+        variant: "destructive",
+      })
+    } finally {
+      setTestingConnection(false)
+    }
+  }
 
   const handleSaveSettings = (category: string) => {
-    alert(`${category} settings saved successfully!`)
+    if (category === "M-Pesa") {
+      handleSaveMpesaSettings()
+    } else {
+      toast({
+        title: "Settings Saved! ⚙️",
+        description: `${category} settings saved successfully!`,
+        variant: "default",
+      })
+    }
   }
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
-    alert("Copied to clipboard!")
+    toast({
+      title: "Copied! 📋",
+      description: "Copied to clipboard!",
+      variant: "default",
+    })
   }
 
   return (
@@ -116,7 +260,10 @@ export function SettingsSection() {
                 <div className="grid gap-4">
                   <div>
                     <Label htmlFor="mpesa-env">Environment</Label>
-                    <Select defaultValue="sandbox">
+                    <Select 
+                      value={mpesaSettings.environment} 
+                      onValueChange={(value) => setMpesaSettings(prev => ({ ...prev, environment: value }))}
+                    >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
@@ -128,7 +275,12 @@ export function SettingsSection() {
                   </div>
                   <div>
                     <Label htmlFor="mpesa-shortcode">Business Shortcode</Label>
-                    <Input id="mpesa-shortcode" defaultValue="174379" />
+                    <Input 
+                      id="mpesa-shortcode" 
+                      value={mpesaSettings.shortcode}
+                      onChange={(e) => setMpesaSettings(prev => ({ ...prev, shortcode: e.target.value }))}
+                      placeholder="174379"
+                    />
                   </div>
                   <div>
                     <Label htmlFor="mpesa-consumer-key">Consumer Key</Label>
@@ -136,7 +288,9 @@ export function SettingsSection() {
                       <Input 
                         id="mpesa-consumer-key" 
                         type={showMpesaKeys ? "text" : "password"}
-                        defaultValue="xxxxxxxxxxxxxxxxxxxxx" 
+                        value={mpesaSettings.consumer_key}
+                        onChange={(e) => setMpesaSettings(prev => ({ ...prev, consumer_key: e.target.value }))}
+                        placeholder="Enter your M-Pesa consumer key"
                       />
                       <Button
                         type="button"
@@ -155,28 +309,54 @@ export function SettingsSection() {
                       <Input 
                         id="mpesa-consumer-secret" 
                         type={showMpesaKeys ? "text" : "password"}
-                        defaultValue="xxxxxxxxxxxxxxxxxxxxx" 
+                        value={mpesaSettings.consumer_secret}
+                        onChange={(e) => setMpesaSettings(prev => ({ ...prev, consumer_secret: e.target.value }))}
+                        placeholder="Enter your M-Pesa consumer secret"
                       />
                     </div>
                   </div>
                   <div>
                     <Label htmlFor="mpesa-passkey">STK Push Passkey</Label>
-                    <Input id="mpesa-passkey" type="password" defaultValue="xxxxxxxxxxxxxxxxxxxxx" />
+                    <Input 
+                      id="mpesa-passkey" 
+                      type="password" 
+                      value={mpesaSettings.passkey}
+                      onChange={(e) => setMpesaSettings(prev => ({ ...prev, passkey: e.target.value }))}
+                      placeholder="Enter your STK Push passkey"
+                    />
                   </div>
                   <div>
                     <Label htmlFor="mpesa-callback">Callback URL</Label>
                     <div className="flex gap-2">
-                      <Input id="mpesa-callback" defaultValue="https://yourapp.com/mpesa/callback" />
-                      <Button variant="outline" size="sm" onClick={() => copyToClipboard("https://yourapp.com/mpesa/callback")}>
+                      <Input 
+                        id="mpesa-callback" 
+                        value={mpesaSettings.callback_url}
+                        onChange={(e) => setMpesaSettings(prev => ({ ...prev, callback_url: e.target.value }))}
+                        placeholder="https://yourapp.com/api/mpesa/stk-callback"
+                      />
+                      <Button variant="outline" size="sm" onClick={() => copyToClipboard(mpesaSettings.callback_url || "https://yourapp.com/api/mpesa/stk-callback")}>
                         <Copy className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
                 </div>
-                <Button onClick={() => handleSaveSettings("M-Pesa")} className="w-full bg-green-600 hover:bg-green-700">
-                  <Save className="h-4 w-4 mr-2" />
-                  Save M-Pesa Settings
-                </Button>
+                <div className="flex gap-2">
+                  <Button 
+                    onClick={() => handleSaveSettings("M-Pesa")} 
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                    disabled={isLoading}
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {isLoading ? "Saving..." : "Save M-Pesa Settings"}
+                  </Button>
+                  <Button 
+                    onClick={handleTestMpesaConnection}
+                    variant="outline"
+                    disabled={testingConnection || !mpesaSettings.consumer_key || !mpesaSettings.consumer_secret}
+                  >
+                    {testingConnection ? "Testing..." : "Test Connection"}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 

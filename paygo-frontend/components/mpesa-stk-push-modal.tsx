@@ -5,8 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Smartphone, Loader2, CheckCircle, XCircle } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 interface MpesaStkPushModalProps {
   isOpen: boolean
@@ -23,6 +23,7 @@ export function MpesaStkPushModal({
   paymentAmount,
   paymentType,
 }: MpesaStkPushModalProps) {
+  const { toast } = useToast()
   const [phoneNumber, setPhoneNumber] = useState("")
   const [isProcessing, setIsProcessing] = useState(false)
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle')
@@ -52,16 +53,22 @@ export function MpesaStkPushModal({
 
   const handleStkPush = async () => {
     if (!phoneNumber) {
-      setStatusMessage("Please enter your M-Pesa phone number")
-      setPaymentStatus('error')
+      toast({
+        title: "Phone Number Required",
+        description: "Please enter your M-Pesa phone number",
+        variant: "destructive",
+      })
       return
     }
 
     const formattedPhone = formatPhoneNumber(phoneNumber)
     
     if (formattedPhone.length !== 12) {
-      setStatusMessage("Please enter a valid Kenyan phone number")
-      setPaymentStatus('error')
+      toast({
+        title: "Invalid Phone Number",
+        description: "Please enter a valid Kenyan phone number",
+        variant: "destructive",
+      })
       return
     }
 

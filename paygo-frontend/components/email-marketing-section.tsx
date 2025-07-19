@@ -6,10 +6,17 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Mail, Send } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 export function EmailMarketingSection() {
-  const handleSendEmail = () => {
-    alert("Sending email campaign (dummy action)...")
+  const { toast } = useToast()
+
+  const sendCampaign = () => {
+    toast({
+      title: "Email Campaign Sent! 📧",
+      description: "Sending email campaign (dummy action)...",
+      variant: "default",
+    })
   }
 
   return (
@@ -34,7 +41,7 @@ export function EmailMarketingSection() {
           </Label>
           <Textarea id="email-content" placeholder="Type your email content here..." rows={8} />
         </div>
-        <Button onClick={handleSendEmail} className="w-full bg-purple-600 hover:bg-purple-700">
+        <Button onClick={sendCampaign} className="w-full bg-purple-600 hover:bg-purple-700">
           <Send className="h-4 w-4 mr-2" />
           Send Email Campaign
         </Button>

@@ -6,16 +6,27 @@
 **So that** I can complete my order and start the PayGo plan  
 
 ### Acceptance Criteria:
-- [ ] M-Pesa STK Push integration
-- [ ] M-Pesa Paybill/Till number payments
+- [x] M-Pesa STK Push integration (API endpoints implemented)
+- [x] M-Pesa Paybill/Till number payments (C2B integration complete)
+- [x] M-Pesa admin configuration management
+- [x] Dynamic environment switching (sandbox/production)
+- [x] M-Pesa connection testing functionality
 - [ ] Bank debit/credit card processing
-- [ ] Real-time payment confirmation
+- [ ] Real-time payment confirmation (callback handling implemented)
 - [ ] Receipt generation and SMS notification
 - [ ] Payment retry mechanism for failures
 - [ ] Plan activation upon successful down payment
 
 ### Priority: High
 ### Status: 🔄 In Progress
+
+### ✅ **M-Pesa Implementation Completed**:
+- **STK Push**: `/api/mpesa/stk-push` endpoint with dynamic configuration
+- **C2B Payments**: Support for both Paybill and Till Number transactions
+- **Admin Portal**: Complete configuration interface in settings
+- **Security**: Encrypted credential storage and masked display
+- **Testing**: Built-in connection testing and verification
+- **Environment Management**: Seamless sandbox/production switching
 
 ### Integration Points:
 - **From Story 2.4**: Receives selected plan details and quote ID

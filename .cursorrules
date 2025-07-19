@@ -445,3 +445,4 @@ Remember: Always check existing implementations and update task status after com
 
 - keep the current user experience of the website.
 - use browser mcp to test the website frontend after each implementation.
+- in every implementation update stories and tasks status.
