@@ -11,6 +11,8 @@ use App\Http\Controllers\Api\AdminDashboardController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\PayGoPlanController;
 use App\Http\Controllers\Api\MpesaController;
+use App\Http\Controllers\Api\PaybillController;
+use App\Http\Controllers\Api\VisaPaymentController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\SettingsController;
 use Illuminate\Support\Facades\Hash;
@@ -96,23 +98,41 @@ Route::get('/health', function () {
 
 // Get API configuration including base URL
 Route::get('/config', function () {
-    $baseUrl = url('/api');
-    
-    // Check if there's a custom API base URL in system settings
-    $customBaseUrl = \App\Models\SystemSetting::where('category', 'api')
-                    ->where('key', 'base_url')
-                    ->where('is_active', true)
-                    ->value('value');
-    
-    if ($customBaseUrl) {
-        $baseUrl = rtrim($customBaseUrl, '/') . '/api';
+    try {
+        $config = \App\Models\SystemSetting::getApiConfig();
+        
+        // Ensure the base URL ends with /api
+        $baseUrl = rtrim($config['base_url'], '/');
+        if (!str_ends_with($baseUrl, '/api')) {
+            $baseUrl .= '/api';
+        }
+        
+        return response()->json([
+            'success' => true,
+            'api_base_url' => $baseUrl,
+            'config' => [
+                'timeout' => $config['timeout'],
+                'rate_limit' => $config['rate_limit'],
+                'environment' => $config['environment'],
+            ],
+            'timestamp' => now(),
+        ]);
+    } catch (\Exception $e) {
+        \Illuminate\Support\Facades\Log::error('API config error: ' . $e->getMessage());
+        
+        // Fallback response
+        return response()->json([
+            'success' => true,
+            'api_base_url' => url('/api'),
+            'config' => [
+                'timeout' => 30,
+                'rate_limit' => 1000,
+                'environment' => app()->environment(),
+            ],
+            'timestamp' => now(),
+            'fallback' => true,
+        ]);
     }
-    
-    return response()->json([
-        'api_base_url' => $baseUrl,
-        'timestamp' => now(),
-        'environment' => app()->environment()
-    ]);
 });
 
 // Root API info
@@ -212,6 +232,11 @@ Route::middleware('auth:sanctum')->prefix('client')->group(function () {
     // M-Pesa Payments and Transactions
     Route::get('/mpesa-transactions', [ClientProfileController::class, 'getMpesaTransactions']);
     Route::get('/payment-orders', [ClientProfileController::class, 'getPaymentOrders']);
+    
+    // PayBill Transactions (NEW)
+    Route::get('/paybill-transactions', [ClientProfileController::class, 'getPaybillTransactions']);
+    Route::get('/paybill-transactions/summary', [ClientProfileController::class, 'getPaybillTransactionSummary']);
+    Route::get('/paybill-transactions/{transactionId}', [ClientProfileController::class, 'getPaybillTransaction']);
 });
 
 // ==============================================
@@ -267,6 +292,9 @@ Route::middleware('auth:sanctum')->prefix('admin/products')->group(function () {
 
 // M-Pesa STK Push and utility routes
 Route::prefix('mpesa')->group(function () {
+    // Debug and configuration routes
+    Route::get('config-status', [MpesaController::class, 'getConfigStatus']); // Check M-Pesa configuration status
+    
     // STK Push routes
     Route::post('stk-push', [MpesaController::class, 'stkPush']); // Initiate STK Push
     Route::post('stk-query', [MpesaController::class, 'stkQuery']); // Query STK Push status
@@ -286,6 +314,56 @@ Route::prefix('mpesa')->group(function () {
     // Utility routes
     Route::post('access-token', [MpesaController::class, 'generateAccessToken']); // Generate access token
     Route::post('password', [MpesaController::class, 'generatePassword']); // Generate password and timestamp
+});
+
+// ==============================================
+// M-PESA PAYBILL C2B ROUTES (SEPARATE FROM STK PUSH)
+// ==============================================
+
+// M-Pesa Paybill C2B routes (for ongoing PayGo payments using KOYO device ID)
+Route::prefix('paybill')->group(function () {
+    // C2B URL Registration
+    Route::post('register-urls', [PaybillController::class, 'registerUrls']); // Register C2B validation and confirmation URLs
+    
+    // C2B Callback endpoints (called by Safaricom)
+    Route::post('validation', [PaybillController::class, 'validation']); // Validation endpoint (called by Safaricom)
+    Route::post('confirmation', [PaybillController::class, 'confirmation']); // Confirmation endpoint (called by Safaricom)
+    
+    // Testing and simulation
+    Route::post('simulate', [PaybillController::class, 'simulate']); // Simulate C2B Paybill payment (for testing)
+    
+    // Public information
+    Route::get('info', [PaybillController::class, 'getPaybillInfo']); // Get Paybill information for customers
+    
+    // Payment verification endpoints (public access for customer checking)
+    Route::get('verification-status/{transactionId}', [PaybillController::class, 'getVerificationStatus']); // Get payment verification status
+    
+    // Check payment status by device ID (public - no authentication required)
+    Route::get('payment-status/{deviceId}', [PaybillController::class, 'checkPaymentStatus']); // Check payment status for a device
+    
+    // Protected routes (require authentication)
+    Route::middleware('auth:sanctum')->group(function () {
+        // Transaction history
+        Route::get('transactions', [PaybillController::class, 'getTransactions']); // Get C2B transaction history
+        
+        // Admin verification endpoints
+        Route::post('verify-payment/{transactionId}', [PaybillController::class, 'manualVerifyPayment']); // Manually trigger payment verification
+    });
+});
+
+// ==============================================
+// VISA/MASTERCARD PAYMENT ROUTES
+// ==============================================
+
+// Visa/Mastercard payment processing routes
+Route::prefix('visa')->group(function () {
+    // Payment processing
+    Route::post('process-payment', [VisaPaymentController::class, 'processPayment']); // Process card payment
+    Route::post('validate-card', [VisaPaymentController::class, 'validateCard']); // Validate card details
+    
+    // Information and receipts
+    Route::get('supported-cards', [VisaPaymentController::class, 'getSupportedCards']); // Get supported card types
+    Route::get('receipt/{paymentId}', [VisaPaymentController::class, 'getReceipt']); // Get payment receipt
 });
 
 // Legacy STS routes (keeping for backward compatibility if needed)

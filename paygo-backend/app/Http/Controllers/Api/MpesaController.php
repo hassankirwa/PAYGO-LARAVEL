@@ -14,39 +14,137 @@ use Illuminate\Support\Facades\Log;
 class MpesaController extends Controller
 {
     /**
+     * 0. Get M-Pesa Configuration Status (for debugging)
+     */
+    public function getConfigStatus()
+    {
+        try {
+            $config = SystemSetting::getMpesaConfig();
+            
+            $status = [
+                'environment' => $config['environment'] ?? 'missing',
+                'has_consumer_key' => !empty($config['consumer_key']),
+                'has_consumer_secret' => !empty($config['consumer_secret']),
+                'has_passkey' => !empty($config['passkey']),
+                'shortcode' => $config['shortcode'] ?? 'missing',
+                'has_callback_url' => !empty($config['callback_url']),
+                'has_confirmation_url' => !empty($config['confirmation_url']),
+                'has_validation_url' => !empty($config['validation_url']),
+            ];
+            
+            $allConfigured = $status['has_consumer_key'] && 
+                           $status['has_consumer_secret'] && 
+                           $status['has_passkey'] && 
+                           !empty($status['shortcode']);
+            
+            // Test access token generation
+            $tokenStatus = null;
+            if ($allConfigured) {
+                $token = $this->generateAccessToken();
+                $tokenStatus = $token ? 'success' : 'failed';
+            } else {
+                $tokenStatus = 'skipped_incomplete_config';
+            }
+            
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'configuration_complete' => $allConfigured,
+                    'config_details' => $status,
+                    'access_token_test' => $tokenStatus,
+                    'recommendations' => $allConfigured ? 
+                        ['Configuration looks good!'] : 
+                        ['Please configure M-Pesa settings in admin panel']
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to check M-Pesa configuration: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * 1. Generate OAuth access token
      */
     public function generateAccessToken()
     {
-        $config = SystemSetting::getMpesaConfig();
-        
-        $consumer_key    = $config['consumer_key'];
-        $consumer_secret = $config['consumer_secret'];
-        
-        if (!$consumer_key || !$consumer_secret) {
-            Log::error('M-Pesa credentials not configured');
+        try {
+            $config = SystemSetting::getMpesaConfig();
+            
+            $consumer_key    = $config['consumer_key'];
+            $consumer_secret = $config['consumer_secret'];
+            
+            Log::info('🔑 Generating M-Pesa Access Token:', [
+                'environment' => $config['environment'],
+                'has_consumer_key' => !empty($consumer_key),
+                'has_consumer_secret' => !empty($consumer_secret)
+            ]);
+            
+            if (!$consumer_key || !$consumer_secret) {
+                Log::error('❌ M-Pesa credentials not configured');
+                return null;
+            }
+            
+            $credentials     = base64_encode("{$consumer_key}:{$consumer_secret}");
+            $url             = $config['environment'] === 'production'
+                             ? 'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials'
+                             : 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
+
+            Log::info('🌐 Making M-Pesa OAuth Request:', ['url' => $url]);
+
+            $curl = curl_init();
+            curl_setopt_array($curl, [
+                CURLOPT_URL            => $url,
+                CURLOPT_HTTPHEADER     => ["Authorization: Basic {$credentials}"],
+                CURLOPT_HEADER         => false,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT        => 30,
+                CURLOPT_CONNECTTIMEOUT => 10,
+            ]);
+
+            $response = curl_exec($curl);
+            $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+            $curlError = curl_error($curl);
+            curl_close($curl);
+
+            if ($curlError) {
+                Log::error('❌ M-Pesa OAuth cURL Error:', ['error' => $curlError]);
+                return null;
+            }
+
+            if ($httpCode !== 200) {
+                Log::error('❌ M-Pesa OAuth HTTP Error:', [
+                    'http_code' => $httpCode,
+                    'response' => $response
+                ]);
+                return null;
+            }
+
+            $body = json_decode($response);
+            
+            if (!$body || !isset($body->access_token)) {
+                Log::error('❌ M-Pesa OAuth Invalid Response:', [
+                    'response' => $response,
+                    'parsed' => $body
+                ]);
+                return null;
+            }
+
+            Log::info('✅ M-Pesa Access Token Generated Successfully');
+            return $body->access_token;
+
+        } catch (\Exception $e) {
+            Log::error('❌ M-Pesa Access Token Generation Exception:', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
             return null;
         }
-        
-        $credentials     = base64_encode("{$consumer_key}:{$consumer_secret}");
-        $url             = $config['environment'] === 'production'
-                         ? 'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials'
-                         : 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials';
-
-        $curl = curl_init();
-        curl_setopt_array($curl, [
-            CURLOPT_URL            => $url,
-            CURLOPT_HTTPHEADER     => ["Authorization: Basic {$credentials}"],
-            CURLOPT_HEADER         => false,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_RETURNTRANSFER => true,
-        ]);
-
-        $response = curl_exec($curl);
-        curl_close($curl);
-
-        $body = json_decode($response);
-        return $body->access_token ?? null;
     }
 
     /**
@@ -106,16 +204,34 @@ class MpesaController extends Controller
 
     /**
      * 4. Validation endpoint (called by Safaricom)
+     * Handles M-Pesa C2B validation requests before payment completion
      */
     public function mpesaValidation(Request $request)
     {
-        // Here you could inspect $request->all() and decide to accept or reject
-        Log::info('M-Pesa Validation Request:', $request->all());
+        Log::info('🔍 M-Pesa Validation Request:', $request->all());
         
-        return response()->json([
-            'ResultCode' => 0,
-            'ResultDesc' => 'Accepted validation request.'
-        ]);
+        // Use the comprehensive validation service
+        $validationService = new \App\Services\MpesaValidationService();
+        $validationResult = $validationService->validateTransaction($request->all());
+        
+        // Log the validation result
+        if ($validationResult['ResultCode'] === '0') {
+            Log::info('✅ M-Pesa Validation ACCEPTED via Service:', [
+                'transaction_id' => $request->input('TransID'),
+                'device_id' => $request->input('BillRefNumber'),
+                'amount' => $request->input('TransAmount'),
+                'result' => $validationResult
+            ]);
+        } else {
+            Log::warning('❌ M-Pesa Validation REJECTED via Service:', [
+                'transaction_id' => $request->input('TransID'),
+                'device_id' => $request->input('BillRefNumber'),
+                'amount' => $request->input('TransAmount'),
+                'result' => $validationResult
+            ]);
+        }
+        
+        return response()->json($validationResult);
     }
 
     /**
@@ -139,25 +255,53 @@ class MpesaController extends Controller
      */
     public function stkPush(Request $request)
     {
-        $request->validate([
-            'phone_number' => 'required|string',
-            'amount' => 'required|numeric|min:1',
-            'account_reference' => 'required|string',
-            'transaction_desc' => 'required|string'
-        ]);
+        try {
+            Log::info('🚀 STK Push Request Started:', $request->all());
 
-        $config = SystemSetting::getMpesaConfig();
-        $token = $this->generateAccessToken();
-        
-        if (!$token) {
-            return response()->json([
-                'success' => false,
-                'error' => 'Failed to generate access token'
-            ], 500);
-        }
+            $request->validate([
+                'phone_number' => 'required|string',
+                'amount' => 'required|numeric|min:1',
+                'account_reference' => 'required|string',
+                'transaction_desc' => 'required|string'
+            ]);
 
-        // Format phone number
-        $phoneNumber = $this->formatPhoneNumber($request->phone_number);
+            // Check M-Pesa configuration
+            $config = SystemSetting::getMpesaConfig();
+            Log::info('📋 M-Pesa Config Retrieved:', [
+                'environment' => $config['environment'] ?? 'missing',
+                'shortcode' => $config['shortcode'] ?? 'missing',
+                'has_consumer_key' => !empty($config['consumer_key']),
+                'has_consumer_secret' => !empty($config['consumer_secret']),
+                'has_passkey' => !empty($config['passkey']),
+                'callback_url' => $config['callback_url'] ?? 'missing'
+            ]);
+
+            // Validate required config
+            if (empty($config['consumer_key']) || empty($config['consumer_secret']) || empty($config['passkey'])) {
+                Log::error('❌ M-Pesa Configuration Incomplete');
+                return response()->json([
+                    'success' => false,
+                    'error' => 'M-Pesa configuration is incomplete. Please check admin settings.'
+                ], 500);
+            }
+
+            // Generate access token
+            Log::info('🔑 Generating M-Pesa Access Token...');
+            $config = SystemSetting::getMpesaConfig();
+            $token = $this->generateAccessToken();
+            
+            if (!$token) {
+                Log::error('❌ Failed to generate M-Pesa access token');
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Failed to generate access token. Please check M-Pesa credentials.'
+                ], 500);
+            }
+
+            Log::info('✅ M-Pesa Access Token Generated Successfully');
+
+            // Format phone number
+            $phoneNumber = $this->formatPhoneNumber($request->phone_number);
         
         // Generate timestamp and password
         $timestamp = Carbon::now()->format('YmdHms');
@@ -250,6 +394,26 @@ class MpesaController extends Controller
                 ], 400);
             }
         }
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('❌ STK Push Validation Failed:', $e->errors());
+            return response()->json([
+                'success' => false,
+                'error' => 'Validation failed',
+                'details' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('❌ STK Push Error:', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'error' => 'STK Push failed: ' . $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -300,10 +464,31 @@ class MpesaController extends Controller
                             $transactionData['mpesa_receipt_number'] = $item['Value'];
                             break;
                         case 'Balance':
-                            $transactionData['balance'] = $item['Value'];
+                            // Handle complex balance objects from M-Pesa
+                            $balanceValue = $item['Value'];
+                            if (is_numeric($balanceValue)) {
+                                $transactionData['balance'] = $balanceValue;
+                            } else {
+                                // If balance is a complex object, extract numeric value or set to null
+                                if (is_string($balanceValue) && preg_match('/BasicAmount=([\d.]+)/', $balanceValue, $matches)) {
+                                    $transactionData['balance'] = $matches[1];
+                                } else {
+                                    $transactionData['balance'] = null; // Skip complex balance objects
+                                    Log::warning('Complex balance object received, skipping:', ['balance' => $balanceValue]);
+                                }
+                            }
                             break;
                         case 'TransactionDate':
-                            $transactionData['transaction_date'] = Carbon::createFromFormat('YmdHis', $item['Value']);
+                            // Handle M-Pesa transaction date format safely
+                            try {
+                                $transactionData['transaction_date'] = Carbon::createFromFormat('YmdHis', $item['Value']);
+                            } catch (\Exception $e) {
+                                Log::warning('Invalid transaction date format, using current time:', [
+                                    'received_date' => $item['Value'],
+                                    'error' => $e->getMessage()
+                                ]);
+                                $transactionData['transaction_date'] = now();
+                            }
                             break;
                         case 'PhoneNumber':
                             $transactionData['phone_number'] = $item['Value'];

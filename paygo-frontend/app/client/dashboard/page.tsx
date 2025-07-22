@@ -25,6 +25,7 @@ import { PaymentModal } from "@/components/payment-modal" // Import the new Paym
 import { authService, User as AuthUser } from "@/lib/auth"
 import { ProfileSettingsModal } from "@/components/profile-settings-modal"
 import { PreferencesModal } from "@/components/preferences-modal"
+import { PaybillTransactions } from "@/components/client-dashboard/paybill-transactions"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -441,6 +442,11 @@ export default function ClientDashboard() {
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        {/* PayBill Transactions Section */}
+        <div className="mt-8">
+          <PaybillTransactions />
         </div>
       </main>
 

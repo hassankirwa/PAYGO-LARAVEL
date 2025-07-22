@@ -6,8 +6,10 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
+  VisuallyHidden,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -166,6 +168,9 @@ export function ProfileSettingsModal({ isOpen, onClose, userType }: ProfileSetti
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="sm:max-w-[600px]">
+          <VisuallyHidden>
+            <DialogTitle>Loading Profile</DialogTitle>
+          </VisuallyHidden>
           <div className="flex items-center justify-center p-8">
             <Loader2 className="h-8 w-8 animate-spin" />
           </div>

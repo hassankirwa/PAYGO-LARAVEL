@@ -59,7 +59,15 @@ export default function PaymentsPage() {
       setLoading(true)
       setError(null)
       
-      const url = await getApiUrl(`/client/mpesa-transactions?status=${statusFilter}&page=${currentPage}&per_page=10`)
+      let url: string;
+      try {
+        url = await getApiUrl(`/client/mpesa-transactions?status=${statusFilter}&page=${currentPage}&per_page=10`);
+      } catch (error) {
+        console.error('❌ Failed to get API URL:', error);
+        setError('Failed to load API configuration. Please check your connection and try again.');
+        setLoading(false);
+        return;
+      }
       
       const response = await fetch(url, {
         headers: {
@@ -91,7 +99,15 @@ export default function PaymentsPage() {
       setLoading(true)
       setError(null)
       
-      const url = await getApiUrl(`/client/payment-orders?status=${statusFilter}&page=${currentPage}&per_page=10`)
+      let url: string;
+      try {
+        url = await getApiUrl(`/client/payment-orders?status=${statusFilter}&page=${currentPage}&per_page=10`);
+      } catch (error) {
+        console.error('❌ Failed to get API URL:', error);
+        setError('Failed to load API configuration. Please check your connection and try again.');
+        setLoading(false);
+        return;
+      }
       
       const response = await fetch(url, {
         headers: {

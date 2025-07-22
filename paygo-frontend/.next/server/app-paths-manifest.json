@@ -1,10 +1,9 @@
 {
   "/_not-found/page": "app/_not-found/page.js",
-  "/checkout/page": "app/checkout/page.js",
-  "/products/[id]/page": "app/products/[id]/page.js",
   "/page": "app/page.js",
+  "/products/[id]/page": "app/products/[id]/page.js",
   "/products/[id]/paygo-plans/page": "app/products/[id]/paygo-plans/page.js",
-  "/products/page": "app/products/page.js",
+  "/checkout/page": "app/checkout/page.js",
   "/client/dashboard/page": "app/client/dashboard/page.js",
   "/client/payments/page": "app/client/payments/page.js"
 }

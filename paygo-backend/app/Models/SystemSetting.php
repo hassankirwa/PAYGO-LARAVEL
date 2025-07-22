@@ -110,6 +110,19 @@ class SystemSetting extends Model
         ];
     }
 
+    // Get API configuration
+    public static function getApiConfig()
+    {
+        $settings = self::getCategory('api');
+        
+        return [
+            'base_url' => $settings['base_url'] ?? url('/api'),
+            'timeout' => $settings['timeout'] ?? 30,
+            'rate_limit' => $settings['rate_limit'] ?? 1000,
+            'environment' => app()->environment(),
+        ];
+    }
+
     // Relationships
     public function creator()
     {

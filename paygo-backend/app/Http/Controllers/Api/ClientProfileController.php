@@ -453,4 +453,188 @@ class ClientProfileController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Get PayBill transactions for authenticated client
+     */
+    public function getPaybillTransactions(Request $request)
+    {
+        try {
+            $client = auth('sanctum')->user();
+            
+            if (!$client) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Unauthenticated'
+                ], 401);
+            }
+
+            // Query parameters
+            $page = $request->get('page', 1);
+            $perPage = min($request->get('per_page', 10), 50); // Max 50 per page
+            $status = $request->get('status'); // 'pending', 'processed', 'failed'
+            $paymentType = $request->get('payment_type'); // 'down_payment', 'installment', etc.
+            $days = $request->get('days'); // Filter by recent days
+
+            $query = \App\Models\PaybillTransaction::forClient($client->id)
+                ->with(['appliance', 'paymentOrder', 'paymentPlan'])
+                ->orderBy('created_at', 'desc');
+
+            // Apply filters
+            if ($status) {
+                $query->where('status', $status);
+            }
+
+            if ($paymentType) {
+                $query->byPaymentType($paymentType);
+            }
+
+            if ($days) {
+                $query->recent($days);
+            }
+
+            $transactions = $query->paginate($perPage);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'transactions' => $transactions->items(),
+                    'pagination' => [
+                        'current_page' => $transactions->currentPage(),
+                        'last_page' => $transactions->lastPage(),
+                        'per_page' => $transactions->perPage(),
+                        'total' => $transactions->total(),
+                        'from' => $transactions->firstItem(),
+                        'to' => $transactions->lastItem(),
+                    ]
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching PayBill transactions:', [
+                'client_id' => auth('sanctum')->id(),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to fetch PayBill transactions'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get PayBill transaction summary for authenticated client
+     */
+    public function getPaybillTransactionSummary(Request $request)
+    {
+        try {
+            $client = auth('sanctum')->user();
+            
+            if (!$client) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $days = $request->get('days', 30); // Default to 30 days
+
+            // Get summary statistics
+            $totalTransactions = \App\Models\PaybillTransaction::getCountForClient($client->id);
+            $totalAmount = \App\Models\PaybillTransaction::getTotalForClient($client->id);
+            $recentTransactions = \App\Models\PaybillTransaction::getCountForClient($client->id, $days);
+            $recentAmount = \App\Models\PaybillTransaction::getTotalForClient($client->id, $days);
+
+            // Get status breakdown
+            $statusBreakdown = \App\Models\PaybillTransaction::forClient($client->id)
+                ->selectRaw('status, COUNT(*) as count, SUM(trans_amount) as total_amount')
+                ->groupBy('status')
+                ->get()
+                ->keyBy('status');
+
+            // Get payment type breakdown
+            $paymentTypeBreakdown = \App\Models\PaybillTransaction::forClient($client->id)
+                ->processed()
+                ->selectRaw('payment_type, COUNT(*) as count, SUM(trans_amount) as total_amount')
+                ->groupBy('payment_type')
+                ->get()
+                ->keyBy('payment_type');
+
+            // Get recent transactions for quick view
+            $recentTransactionsList = \App\Models\PaybillTransaction::getRecentTransactionsForClient($client->id, 5);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'summary' => [
+                        'total_transactions' => $totalTransactions,
+                        'total_amount' => $totalAmount,
+                        'recent_transactions' => $recentTransactions,
+                        'recent_amount' => $recentAmount,
+                        'period_days' => $days
+                    ],
+                    'status_breakdown' => $statusBreakdown,
+                    'payment_type_breakdown' => $paymentTypeBreakdown,
+                    'recent_transactions' => $recentTransactionsList
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching PayBill transaction summary:', [
+                'client_id' => auth('sanctum')->id(),
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to fetch PayBill transaction summary'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get specific PayBill transaction details
+     */
+    public function getPaybillTransaction($transactionId)
+    {
+        try {
+            $client = auth('sanctum')->user();
+            
+            if (!$client) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Unauthenticated'
+                ], 401);
+            }
+
+            $transaction = \App\Models\PaybillTransaction::forClient($client->id)
+                ->with(['appliance', 'paymentOrder', 'paymentPlan'])
+                ->find($transactionId);
+
+            if (!$transaction) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Transaction not found'
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $transaction
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error fetching PayBill transaction details:', [
+                'client_id' => auth('sanctum')->id(),
+                'transaction_id' => $transactionId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to fetch transaction details'
+            ], 500);
+        }
+    }
 } 

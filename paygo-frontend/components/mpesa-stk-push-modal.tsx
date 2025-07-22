@@ -126,7 +126,16 @@ export function MpesaStkPushModal({
 
       console.log('📝 Creating payment order:', paymentOrderData)
 
-      const createOrderUrl = await getApiUrl('/mpesa/create-payment-order')
+      let createOrderUrl: string;
+      try {
+        createOrderUrl = await getApiUrl('/mpesa/create-payment-order');
+      } catch (error) {
+        console.error('❌ Failed to get API URL:', error);
+        setError('Failed to load API configuration. Please check your connection and try again.');
+        setIsLoading(false);
+        return;
+      }
+
       const response = await fetch(createOrderUrl, {
         method: 'POST',
         headers: {
@@ -175,15 +184,64 @@ export function MpesaStkPushModal({
 
     setIsProcessing(true)
     setPaymentStatus('processing')
-    setStatusMessage("Initiating M-Pesa payment...")
+    setStatusMessage("Checking M-Pesa configuration...")
 
     try {
+      // First, check M-Pesa configuration status
+      console.log('🔧 Checking M-Pesa Configuration...')
+      const configUrl = await getApiUrl('/mpesa/config-status')
+      const configResponse = await fetch(configUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+        },
+      })
+
+      const configData = await configResponse.json()
+      console.log('🔧 M-Pesa Configuration Status:', configData)
+
+      if (!configData.success || !configData.data.configuration_complete) {
+        console.error('❌ M-Pesa Configuration Incomplete:', configData)
+        setStatusMessage("M-Pesa is not properly configured")
+        setPaymentStatus('error')
+        toast({
+          title: "Payment System Not Ready",
+          description: "M-Pesa payment system is not properly configured. Please contact support.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      if (configData.data.access_token_test !== 'success') {
+        console.error('❌ M-Pesa Access Token Test Failed:', configData)
+        setStatusMessage("Failed to connect to M-Pesa")
+        setPaymentStatus('error')
+        toast({
+          title: "M-Pesa Connection Error",
+          description: "Cannot connect to M-Pesa services. Please try again later.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      console.log('✅ M-Pesa Configuration Verified - Proceeding with payment')
+      setStatusMessage("Initiating M-Pesa payment...")
+
       const accountReference = generateAccountReference()
       
       // Ensure amount is a whole number (M-Pesa doesn't accept decimals)
       const wholeAmount = Math.round(paymentAmount)
       
-      const stkPushUrl = await getApiUrl('/mpesa/stk-push')
+      let stkPushUrl: string;
+      try {
+        stkPushUrl = await getApiUrl('/mpesa/stk-push');
+      } catch (error) {
+        console.error('❌ Failed to get STK Push URL:', error);
+        setError('Failed to load API configuration. Please check your connection and try again.');
+        setIsLoading(false);
+        return;
+      }
       
       console.log('🔄 Initiating M-Pesa STK Push:', {
         phone_number: formattedPhone,
@@ -215,13 +273,27 @@ export function MpesaStkPushModal({
         data: data
       })
 
-      // First, let's validate we have the expected response structure
+      // Check if the request failed completely (success: false)
+      if (data.success === false) {
+        console.error('❌ STK Push Request Failed:', data)
+        const errorMessage = data.error || "Payment request failed"
+        setStatusMessage(errorMessage)
+        setPaymentStatus('error')
+        toast({
+          title: "Payment Request Failed",
+          description: errorMessage,
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Validate we have the expected successful response structure
       if (!data.success || !data.data || !data.data.response_code) {
         console.error('❌ Invalid STK Push response structure:', data)
         setStatusMessage("Invalid response from payment service")
         setPaymentStatus('error')
         toast({
-          title: "Payment System Error",
+          title: "Payment System Error", 
           description: "Received invalid response from payment service",
           variant: "destructive",
         })
@@ -337,7 +409,15 @@ export function MpesaStkPushModal({
     
     const checkCallbackResult = async () => {
       try {
-        const orderStatusUrl = await getApiUrl('/mpesa/payment-order-status')
+        let orderStatusUrl: string;
+        try {
+          orderStatusUrl = await getApiUrl('/mpesa/payment-order-status');
+        } catch (error) {
+          console.error('❌ Failed to get order status URL:', error);
+          setError('Failed to load API configuration. Please check your connection and try again.');
+          setIsLoading(false);
+          return;
+        }
         
         console.log('🔍 Checking M-Pesa callback result:', {
           checkout_request_id: checkoutId,

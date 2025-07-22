@@ -6,8 +6,10 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
+  VisuallyHidden,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -87,6 +89,9 @@ export function PreferencesModal({ isOpen, onClose, userType }: PreferencesModal
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="sm:max-w-[600px]">
+          <VisuallyHidden>
+            <DialogTitle>Loading Preferences</DialogTitle>
+          </VisuallyHidden>
           <div className="flex items-center justify-center p-8">
             <Loader2 className="h-8 w-8 animate-spin" />
           </div>

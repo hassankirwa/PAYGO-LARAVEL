@@ -23,7 +23,9 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { MpesaStkPushModal } from "@/components/mpesa-stk-push-modal"
-import { formatKshPrice } from "@/lib/api"
+import { PaybillPaymentModal } from "@/components/paybill-payment-modal"
+import { VisaCardModal } from "@/components/visa-card-modal"
+import { formatKshPrice, Product, PayGoPlan, productsApi, convertLaravelProduct } from "@/lib/api"
 
 interface PaymentPlan {
   id: string
@@ -38,7 +40,17 @@ interface PaymentPlan {
   totalCost: number
 }
 
-type PaymentMethod = 'stk-push' | 'till-number' | 'card' | 'cash'
+interface PlanSession {
+  quote_id: string
+  product_id: number
+  product_name: string
+  product_price: number
+  selected_plan: PayGoPlan
+  created_at: string
+  expires_at: string
+}
+
+type PaymentMethod = 'stk-push' | 'paybill' | 'visa-card' | 'cash'
 
 export default function CheckoutPage() {
   const router = useRouter()
@@ -46,68 +58,178 @@ export default function CheckoutPage() {
   const planId = searchParams.get('plan')
   
   const [plan, setPlan] = useState<PaymentPlan | null>(null)
+  const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('stk-push')
   const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   const [showMpesaModal, setShowMpesaModal] = useState(false)
+  const [showPaybillModal, setShowPaybillModal] = useState(false)
+  const [showVisaModal, setShowVisaModal] = useState(false)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
   
-  // Payment form states
-  const [tillNumber, setTillNumber] = useState("5174379") // Default KOYO till number
-  const [cardDetails, setCardDetails] = useState({
-    number: "",
-    expiry: "",
-    cvv: "",
-    name: ""
-  })
-  
-  // Mock plan data - in real app, this would come from API
+  // Load real plan data from session storage and fetch current product price
   useEffect(() => {
-    if (planId) {
-      // Simulate API call to get plan details
-      setTimeout(() => {
-        // Using realistic KES amounts
-        setPlan({
-          id: planId,
-          productId: 1,
-          productName: "KOYO BC-50DC FRIDGE, SINGLE DOOR WITH FREEZER CHAMBER",
-          productPrice: 112700, // KSh 112,700 (converted from $805)
-          frequency: "monthly",
-          installmentAmount: 8453, // KSh 8,453 (converted from $60.38)
-          downPayment: 11270, // KSh 11,270 (converted from $80.50)
-          planDuration: "1 year",
-          totalInstallments: 12,
-          totalCost: 112700 // KSh 112,700
-        })
+    const loadPlanData = async () => {
+      try {
+        setLoading(true)
+        setError(null)
+
+        // Check for plan session data
+        let planSession: PlanSession | null = null
+        
+        // Try to get from session storage first
+        if (typeof window !== 'undefined') {
+          const sessionData = sessionStorage.getItem('paygo_plan_session')
+          if (sessionData) {
+            try {
+              planSession = JSON.parse(sessionData)
+            } catch (e) {
+              console.error('Failed to parse session data:', e)
+            }
+          }
+          
+          // If not in session, try localStorage as backup
+          if (!planSession) {
+            const localData = localStorage.getItem('pending_paygo_purchase')
+            if (localData) {
+              try {
+                planSession = JSON.parse(localData)
+              } catch (e) {
+                console.error('Failed to parse localStorage data:', e)
+              }
+            }
+          }
+        }
+
+        // If no session data and we have a planId, try to reconstruct from product
+        if (!planSession && planId) {
+          const productId = searchParams.get('product')
+          if (productId) {
+            const productResponse = await productsApi.getById(parseInt(productId))
+            if (productResponse.success) {
+              const productData = convertLaravelProduct(productResponse.data)
+              
+              // Create a default plan (10% down payment, 12 months monthly)
+              const defaultDownPayment = productData.price_ksh * 0.10
+              const financingAmount = productData.price_ksh - defaultDownPayment
+              const monthlyInstallment = financingAmount / 12
+              
+              planSession = {
+                quote_id: planId,
+                product_id: productData.id,
+                product_name: productData.name,
+                product_price: productData.price_ksh,
+                selected_plan: {
+                  product_id: productData.id,
+                  frequency: 'monthly' as const,
+                  duration_months: 12,
+                  base_price: productData.price_ksh,
+                  down_payment: defaultDownPayment,
+                  financing_amount: financingAmount,
+                  installment_amount: monthlyInstallment,
+                  total_installments: 12,
+                  total_installment_cost: financingAmount,
+                  total_cost: productData.price_ksh,
+                  total_interest: 0,
+                  interest_rate_annual: 0,
+                  savings_vs_cash: 0,
+                  payment_schedule: [],
+                  grace_period_days: 3,
+                  late_fee_percentage: 5.0,
+                  early_payment_discount: 0.02
+                },
+                created_at: new Date().toISOString(),
+                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+              }
+            }
+          }
+        }
+
+        if (!planSession) {
+          setError("No payment plan found. Please select a plan first.")
+          setLoading(false)
+          return
+        }
+
+        // Check if plan has expired
+        if (new Date() > new Date(planSession.expires_at)) {
+          setError("Your payment plan has expired. Please select a new plan.")
+          setLoading(false)
+          return
+        }
+
+        // Fetch current product price to ensure accuracy
+        try {
+          const productResponse = await productsApi.getById(planSession.product_id)
+          if (productResponse.success) {
+            const currentProduct = convertLaravelProduct(productResponse.data)
+            setProduct(currentProduct)
+            
+            // Use current product price if different from session (price might have been updated)
+            const currentPrice = currentProduct.price_ksh
+            const sessionPrice = planSession.product_price
+            
+            if (Math.abs(currentPrice - sessionPrice) > 0.01) {
+              console.warn(`Price mismatch: Session=${sessionPrice}, Current=${currentPrice}. Using current price.`)
+              
+              // Recalculate plan with current price
+              const selectedPlan = planSession.selected_plan
+              const newDownPayment = currentPrice * (selectedPlan.down_payment / selectedPlan.base_price)
+              const newFinancingAmount = currentPrice - newDownPayment
+              const newInstallmentAmount = newFinancingAmount / selectedPlan.total_installments
+              
+              planSession.product_price = currentPrice
+              planSession.selected_plan.base_price = currentPrice
+              planSession.selected_plan.down_payment = newDownPayment
+              planSession.selected_plan.financing_amount = newFinancingAmount
+              planSession.selected_plan.installment_amount = newInstallmentAmount
+              planSession.selected_plan.total_cost = currentPrice
+              planSession.selected_plan.total_installment_cost = newFinancingAmount
+            }
+          }
+        } catch (productError) {
+          console.error('Failed to fetch current product price:', productError)
+          // Continue with session data if product fetch fails
+        }
+
+        // Convert to PaymentPlan format
+        const paymentPlan: PaymentPlan = {
+          id: planSession.quote_id,
+          productId: planSession.product_id,
+          productName: planSession.product_name,
+          productPrice: planSession.product_price,
+          frequency: planSession.selected_plan.frequency,
+          installmentAmount: planSession.selected_plan.installment_amount,
+          downPayment: planSession.selected_plan.down_payment,
+          planDuration: `${planSession.selected_plan.duration_months} months`,
+          totalInstallments: planSession.selected_plan.total_installments,
+          totalCost: planSession.selected_plan.total_cost
+        }
+
+        setPlan(paymentPlan)
         setLoading(false)
-      }, 1000)
-    } else {
-      setError("No payment plan found")
-      setLoading(false)
+
+      } catch (error) {
+        console.error('Error loading plan data:', error)
+        setError("Failed to load payment plan. Please try again.")
+        setLoading(false)
+      }
     }
-  }, [planId])
+
+    loadPlanData()
+  }, [planId, searchParams])
 
   const handleStkPushPayment = () => {
     setShowMpesaModal(true)
   }
 
-  const handleTillNumberPayment = () => {
-    setIsProcessingPayment(true)
-    // Simulate till number payment processing
-    setTimeout(() => {
-      setIsProcessingPayment(false)
-      setPaymentSuccess(true)
-    }, 3000)
+  const handlePaybillPayment = () => {
+    setShowPaybillModal(true)
   }
 
-  const handleCardPayment = () => {
-    setIsProcessingPayment(true)
-    // Simulate card payment processing
-    setTimeout(() => {
-      setIsProcessingPayment(false)
-      setPaymentSuccess(true)
-    }, 4000)
+  const handleVisaCardPayment = () => {
+    setShowVisaModal(true)
   }
 
   const handleCashPayment = () => {
@@ -133,13 +255,10 @@ export default function CheckoutPage() {
     switch (paymentMethod) {
       case 'stk-push':
         return true
-      case 'till-number':
-        return tillNumber.length > 0
-      case 'card':
-        return cardDetails.number.length >= 16 && 
-               cardDetails.expiry.length >= 5 && 
-               cardDetails.cvv.length >= 3 && 
-               cardDetails.name.length > 0
+      case 'paybill':
+        return true
+      case 'visa-card':
+        return true
       case 'cash':
         return true
       default:
@@ -152,11 +271,11 @@ export default function CheckoutPage() {
       case 'stk-push':
         handleStkPushPayment()
         break
-      case 'till-number':
-        handleTillNumberPayment()
+      case 'paybill':
+        handlePaybillPayment()
         break
-      case 'card':
-        handleCardPayment()
+      case 'visa-card':
+        handleVisaCardPayment()
         break
       case 'cash':
         handleCashPayment()
@@ -175,30 +294,58 @@ export default function CheckoutPage() {
     )
   }
 
-  if (error || !plan) {
+  if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white flex items-center justify-center">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Payment Error</h1>
-          <p className="text-gray-600 mb-4">{error || "Payment plan not found"}</p>
-          <Link href="/products">
-            <Button>Back to Products</Button>
-          </Link>
-        </div>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="text-center space-y-4 pt-6">
+            <AlertCircle className="h-12 w-12 text-red-500 mx-auto" />
+            <h2 className="text-xl font-semibold text-gray-900">Plan Not Found</h2>
+            <p className="text-gray-600">{error}</p>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Link href="/products">
+                <Button className="bg-emerald-600 hover:bg-emerald-700">
+                  Browse Products
+                </Button>
+              </Link>
+              <Button variant="outline" onClick={() => router.back()}>
+                Go Back
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  if (!plan) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="text-center space-y-4 pt-6">
+            <AlertCircle className="h-12 w-12 text-orange-500 mx-auto" />
+            <h2 className="text-xl font-semibold text-gray-900">No Plan Selected</h2>
+            <p className="text-gray-600">Please select a PayGo plan to continue with checkout.</p>
+            <Link href="/products">
+              <Button className="bg-emerald-600 hover:bg-emerald-700">
+                Select a Plan
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   if (paymentSuccess) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white flex items-center justify-center">
-        <Card className="w-full max-w-2xl mx-4">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-white flex items-center justify-center p-4">
+        <Card className="w-full max-w-2xl">
           <CardHeader className="text-center">
-            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-              <CheckCircle className="h-8 w-8 text-green-600" />
+            <div className="mx-auto w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle className="h-8 w-8 text-emerald-600" />
             </div>
-            <CardTitle className="text-2xl text-green-700">Payment Successful!</CardTitle>
+            <CardTitle className="text-2xl text-emerald-600">Payment Successful!</CardTitle>
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <p className="text-gray-600">
@@ -287,57 +434,57 @@ export default function CheckoutPage() {
                     )}
                   </div>
 
-                  {/* Lipa na M-Pesa (Till Number) */}
+                  {/* M-Pesa Paybill */}
                   <div 
                     className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
-                      paymentMethod === 'till-number' 
+                      paymentMethod === 'paybill' 
                         ? 'border-emerald-500 bg-emerald-50' 
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
-                    onClick={() => setPaymentMethod('till-number')}
+                    onClick={() => setPaymentMethod('paybill')}
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
                         <Hash className="h-6 w-6 text-green-600" />
                       </div>
                       <div>
-                        <h4 className="font-semibold">Lipa na M-Pesa</h4>
-                        <p className="text-sm text-gray-600">Pay via Till Number</p>
+                        <h4 className="font-semibold">M-Pesa Paybill</h4>
+                        <p className="text-sm text-gray-600">Pay with KOYO device ID</p>
                       </div>
                     </div>
-                    {paymentMethod === 'till-number' && (
+                    {paymentMethod === 'paybill' && (
                       <div className="mt-3 pt-3 border-t border-emerald-200">
                         <div className="flex items-center gap-2 text-sm text-emerald-700">
                           <Hash className="h-4 w-4" />
-                          <span>Manual M-Pesa payment</span>
+                          <span>Use your device ID as account number</span>
                         </div>
                       </div>
                     )}
                   </div>
 
-                  {/* Bank Card Payment */}
+                  {/* Visa/Mastercard Payment */}
                   <div 
                     className={`border-2 rounded-lg p-4 cursor-pointer transition-all ${
-                      paymentMethod === 'card' 
+                      paymentMethod === 'visa-card' 
                         ? 'border-emerald-500 bg-emerald-50' 
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
-                    onClick={() => setPaymentMethod('card')}
+                    onClick={() => setPaymentMethod('visa-card')}
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
                         <CreditCard className="h-6 w-6 text-blue-600" />
                       </div>
                       <div>
-                        <h4 className="font-semibold">Debit/Credit Card</h4>
-                        <p className="text-sm text-gray-600">Visa, Mastercard accepted</p>
+                        <h4 className="font-semibold">Visa/Mastercard</h4>
+                        <p className="text-sm text-gray-600">Debit & Credit cards</p>
                       </div>
                     </div>
-                    {paymentMethod === 'card' && (
+                    {paymentMethod === 'visa-card' && (
                       <div className="mt-3 pt-3 border-t border-emerald-200">
                         <div className="flex items-center gap-2 text-sm text-emerald-700">
                           <ShieldCheck className="h-4 w-4" />
-                          <span>International cards accepted</span>
+                          <span>Secure card processing</span>
                         </div>
                       </div>
                     )}
@@ -372,90 +519,23 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                {/* Payment Details Form */}
-                {paymentMethod === 'till-number' && (
-                  <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
-                    <h4 className="font-semibold">M-Pesa Till Payment Instructions</h4>
-                    <div className="space-y-3">
-                      <div>
-                        <Label>KOYO Till Number</Label>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Input
-                            value={tillNumber}
-                            onChange={(e) => setTillNumber(e.target.value)}
-                            className="font-mono text-lg"
-                            readOnly
-                          />
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => navigator.clipboard.writeText(tillNumber)}
-                          >
-                            Copy
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="text-sm text-gray-600 space-y-1">
-                        <p><strong>Instructions:</strong></p>
-                        <ol className="list-decimal list-inside space-y-1">
-                          <li>Go to M-Pesa menu on your phone</li>
-                          <li>Select "Lipa na M-Pesa" → "Buy Goods and Services"</li>
-                          <li>Enter Till Number: <strong>{tillNumber}</strong></li>
-                          <li>Enter Amount: <strong>{formatKshPrice(getPaymentAmount() || 0)}</strong></li>
-                          <li>Enter your M-Pesa PIN to complete</li>
-                        </ol>
-                      </div>
-                    </div>
-                  </div>
+                {/* Payment Method Info */}
+                {paymentMethod === 'paybill' && (
+                  <Alert>
+                    <Hash className="h-4 w-4" />
+                    <AlertDescription>
+                      Click "Proceed to Payment" to get your KOYO device ID and detailed Paybill payment instructions.
+                    </AlertDescription>
+                  </Alert>
                 )}
 
-                {paymentMethod === 'card' && (
-                  <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
-                    <h4 className="font-semibold">Card Details</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="md:col-span-2">
-                        <Label>Cardholder Name</Label>
-                        <Input
-                          placeholder="John Doe"
-                          value={cardDetails.name}
-                          onChange={(e) => setCardDetails({...cardDetails, name: e.target.value})}
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <Label>Card Number</Label>
-                        <Input
-                          placeholder="1234 5678 9012 3456"
-                          value={cardDetails.number}
-                          onChange={(e) => setCardDetails({...cardDetails, number: e.target.value.replace(/\s/g, '').replace(/(.{4})/g, '$1 ').trim()})}
-                          maxLength={19}
-                        />
-                      </div>
-                      <div>
-                        <Label>Expiry Date</Label>
-                        <Input
-                          placeholder="MM/YY"
-                          value={cardDetails.expiry}
-                          onChange={(e) => {
-                            let value = e.target.value.replace(/\D/g, '')
-                            if (value.length >= 2) {
-                              value = value.substring(0, 2) + '/' + value.substring(2, 4)
-                            }
-                            setCardDetails({...cardDetails, expiry: value})
-                          }}
-                          maxLength={5}
-                        />
-                      </div>
-                      <div>
-                        <Label>CVV</Label>
-                        <Input
-                          placeholder="123"
-                          value={cardDetails.cvv}
-                          onChange={(e) => setCardDetails({...cardDetails, cvv: e.target.value.replace(/\D/g, '')})}
-                          maxLength={4}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                {paymentMethod === 'visa-card' && (
+                  <Alert>
+                    <CreditCard className="h-4 w-4" />
+                    <AlertDescription>
+                      Click "Proceed to Payment" to securely enter your card details and complete your payment.
+                    </AlertDescription>
+                  </Alert>
                 )}
 
                 {/* Payment Action */}
@@ -465,8 +545,8 @@ export default function CheckoutPage() {
                     disabled={isProcessingPayment || !isFormValid()}
                     className={`w-full ${
                       paymentMethod === 'stk-push' ? 'bg-emerald-600 hover:bg-emerald-700' :
-                      paymentMethod === 'till-number' ? 'bg-green-600 hover:bg-green-700' :
-                      paymentMethod === 'card' ? 'bg-blue-600 hover:bg-blue-700' :
+                      paymentMethod === 'paybill' ? 'bg-green-600 hover:bg-green-700' :
+                      paymentMethod === 'visa-card' ? 'bg-blue-600 hover:bg-blue-700' :
                       'bg-purple-600 hover:bg-purple-700'
                     }`}
                     size="lg"
@@ -479,14 +559,14 @@ export default function CheckoutPage() {
                     ) : (
                       <>
                         {paymentMethod === 'stk-push' && <Smartphone className="h-4 w-4 mr-2" />}
-                        {paymentMethod === 'till-number' && <Hash className="h-4 w-4 mr-2" />}
-                        {paymentMethod === 'card' && <CreditCard className="h-4 w-4 mr-2" />}
+                        {paymentMethod === 'paybill' && <Hash className="h-4 w-4 mr-2" />}
+                        {paymentMethod === 'visa-card' && <CreditCard className="h-4 w-4 mr-2" />}
                         {paymentMethod === 'cash' && <Building2 className="h-4 w-4 mr-2" />}
                         
                         {paymentMethod === 'stk-push' && `Pay via STK Push (${formatKshPrice(getPaymentAmount() || 0)})`}
-                        {paymentMethod === 'till-number' && `I've Paid via Till Number (${formatKshPrice(getPaymentAmount() || 0)})`}
-                        {paymentMethod === 'card' && `Pay with Card (${formatKshPrice(getPaymentAmount() || 0)})`}
-                        {paymentMethod === 'cash' && `Pay Full Amount (${formatKshPrice(plan.productPrice)})`}
+                        {paymentMethod === 'paybill' && `Proceed to Paybill Payment (${formatKshPrice(getPaymentAmount() || 0)})`}
+                        {paymentMethod === 'visa-card' && `Pay with Card (${formatKshPrice(getPaymentAmount() || 0)})`}
+                        {paymentMethod === 'cash' && `Pay Full Amount (${formatKshPrice(plan?.productPrice || 0)})`}
                       </>
                     )}
                   </Button>
@@ -600,14 +680,14 @@ export default function CheckoutPage() {
         </div>
       </div>
 
-      {/* M-Pesa Modal */}
+      {/* Payment Modals */}
       {showMpesaModal && (
         <MpesaStkPushModal
           isOpen={showMpesaModal}
           onClose={handleMpesaClose}
           productName={plan.productName}
-          paymentAmount={plan.downPayment}
-          paymentType="Down Payment"
+          paymentAmount={getPaymentAmount() || 0}
+          paymentType={paymentMethod === 'cash' ? 'Full Payment' : 'Down Payment'}
           quoteId={plan.id}
           productId={plan.productId}
           productPrice={plan.productPrice}
@@ -616,6 +696,37 @@ export default function CheckoutPage() {
           installmentAmount={plan.installmentAmount}
           totalInstallments={plan.totalInstallments}
           planDuration={plan.planDuration}
+        />
+      )}
+
+      {showPaybillModal && (
+        <PaybillPaymentModal
+          isOpen={showPaybillModal}
+          onClose={() => setShowPaybillModal(false)}
+          productName={plan.productName}
+          paymentAmount={getPaymentAmount() || 0}
+          paymentType={paymentMethod === 'cash' ? 'Full Payment' : 'Down Payment'}
+          quoteId={plan.id}
+          productId={plan.productId}
+          productPrice={plan.productPrice}
+          planType={plan.frequency}
+          downPaymentAmount={plan.downPayment}
+          installmentAmount={plan.installmentAmount}
+          totalInstallments={plan.totalInstallments}
+          planDuration={plan.planDuration}
+        />
+      )}
+
+      {showVisaModal && (
+        <VisaCardModal
+          isOpen={showVisaModal}
+          onClose={() => setShowVisaModal(false)}
+          productName={plan.productName}
+          paymentAmount={getPaymentAmount() || 0}
+          paymentType={paymentMethod === 'cash' ? 'Full Payment' : 'Down Payment'}
+          orderReference={plan.id}
+          customerEmail=""
+          customerPhone=""
         />
       )}
     </div>
