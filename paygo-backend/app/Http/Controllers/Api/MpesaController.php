@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Carbon\Carbon;
 use App\Models\MpesaTransaction;
+use App\Models\PaymentOrder;
 use App\Models\SystemSetting;
 use Illuminate\Support\Facades\Log;
 
@@ -200,7 +201,19 @@ class MpesaController extends Controller
 
         $data = json_decode($response, true);
         
+        // Log the immediate M-Pesa STK Push response for debugging
+        Log::info('M-Pesa STK Push Immediate Response (Expected Structure):', [
+            'http_code' => $httpCode,
+            'merchant_request_id' => $data['MerchantRequestID'] ?? 'missing',
+            'checkout_request_id' => $data['CheckoutRequestID'] ?? 'missing', 
+            'response_code' => $data['ResponseCode'] ?? 'missing',
+            'response_description' => $data['ResponseDescription'] ?? 'missing',
+            'customer_message' => $data['CustomerMessage'] ?? 'missing',
+            'full_response' => $data
+        ]);
+        
         if ($httpCode == 200 && isset($data['ResponseCode']) && $data['ResponseCode'] == '0') {
+            Log::info('✅ STK Push accepted by M-Pesa (ResponseCode=0), returning success to frontend');
             return response()->json([
                 'success' => true,
                 'message' => 'STK Push initiated successfully',
@@ -214,11 +227,28 @@ class MpesaController extends Controller
             ]);
         } else {
             Log::error('STK Push Error:', $data);
-            return response()->json([
-                'success' => false,
-                'error' => $data['errorMessage'] ?? 'STK Push failed',
-                'error_code' => $data['errorCode'] ?? null
-            ], 400);
+            
+            // If we have M-Pesa response data, include it for better error handling
+            if (isset($data['ResponseCode']) && $data['ResponseCode'] !== '0') {
+                Log::warning('❌ STK Push rejected by M-Pesa (ResponseCode≠0), returning error to frontend');
+                return response()->json([
+                    'success' => true, // API call succeeded, but M-Pesa rejected
+                    'data' => [
+                        'merchant_request_id' => $data['MerchantRequestID'] ?? null,
+                        'checkout_request_id' => $data['CheckoutRequestID'] ?? null,
+                        'response_code' => $data['ResponseCode'],
+                        'response_description' => $data['ResponseDescription'] ?? 'M-Pesa request failed',
+                        'customer_message' => $data['CustomerMessage'] ?? null
+                    ]
+                ]);
+            } else {
+                // Network or API level error
+                return response()->json([
+                    'success' => false,
+                    'error' => $data['errorMessage'] ?? 'STK Push failed',
+                    'error_code' => $data['errorCode'] ?? null
+                ], 400);
+            }
         }
     }
 
@@ -284,13 +314,17 @@ class MpesaController extends Controller
                 // Create transaction record
                 $transaction = MpesaTransaction::create($transactionData);
                 
-                // TODO: Update payment plan and trigger business logic here
+                // Process successful payment and update payment order
                 $this->processSuccessfulPayment($transaction);
                 
                 Log::info('STK Push Payment Successful:', $transaction->toArray());
             } else {
                 // Payment failed or cancelled
                 $transaction = MpesaTransaction::create($transactionData);
+                
+                // Process failed payment and update payment order
+                $this->processFailedPayment($transaction);
+                
                 Log::info('STK Push Payment Failed:', $transaction->toArray());
             }
 
@@ -534,23 +568,255 @@ class MpesaController extends Controller
     }
 
     /**
+     * Create payment order when STK push is initiated
+     */
+    public function createPaymentOrder(Request $request)
+    {
+        $request->validate([
+            'quote_id' => 'required|string',
+            'checkout_request_id' => 'required|string',
+            'customer_name' => 'required|string',
+            'customer_email' => 'required|email',
+            'customer_phone' => 'required|string',
+            'mpesa_phone_number' => 'required|string',
+            'product_id' => 'required|integer',
+            'product_name' => 'required|string',
+            'product_price' => 'required|numeric',
+            'payment_type' => 'required|in:down_payment,full_payment,installment',
+            'paid_amount' => 'required|numeric',
+            'plan_type' => 'nullable|string',
+            'down_payment_amount' => 'nullable|numeric',
+            'installment_amount' => 'nullable|numeric',
+            'total_installments' => 'nullable|integer',
+            'plan_duration' => 'nullable|string',
+            'delivery_address' => 'nullable|string',
+            'delivery_county' => 'nullable|string',
+        ]);
+
+        try {
+            // Get authenticated client if available
+            $clientId = null;
+            if (auth('sanctum')->check()) {
+                $clientId = auth('sanctum')->user()->id;
+            }
+
+            $paymentOrder = PaymentOrder::create([
+                'order_reference' => PaymentOrder::generateOrderReference(),
+                'quote_id' => $request->quote_id,
+                'payment_type' => $request->payment_type,
+                'status' => 'pending',
+                'client_id' => $clientId,
+                'customer_name' => $request->customer_name,
+                'customer_email' => $request->customer_email,
+                'customer_phone' => $request->customer_phone,
+                'product_id' => $request->product_id,
+                'product_name' => $request->product_name,
+                'product_price' => $request->product_price,
+                'plan_type' => $request->plan_type,
+                'down_payment_amount' => $request->down_payment_amount,
+                'installment_amount' => $request->installment_amount,
+                'total_installments' => $request->total_installments,
+                'plan_duration' => $request->plan_duration,
+                'paid_amount' => $request->paid_amount,
+                'payment_method' => 'mpesa_stk',
+                'mpesa_phone_number' => $request->mpesa_phone_number,
+                'checkout_request_id' => $request->checkout_request_id,
+                'delivery_address' => $request->delivery_address,
+                'delivery_county' => $request->delivery_county,
+            ]);
+
+            Log::info('Payment order created:', $paymentOrder->toArray());
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Payment order created successfully',
+                'data' => [
+                    'order_reference' => $paymentOrder->order_reference,
+                    'order_id' => $paymentOrder->id,
+                    'status' => $paymentOrder->status,
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error creating payment order:', [
+                'error' => $e->getMessage(),
+                'request_data' => $request->all()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to create payment order: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get payment order status
+     */
+    public function getPaymentOrderStatus(Request $request)
+    {
+        $request->validate([
+            'checkout_request_id' => 'required|string'
+        ]);
+
+        try {
+            $paymentOrder = PaymentOrder::where('checkout_request_id', $request->checkout_request_id)->first();
+            $mpesaTransaction = MpesaTransaction::where('checkout_request_id', $request->checkout_request_id)->first();
+
+            // If no payment order found, return not found but check if transaction exists
+            if (!$paymentOrder) {
+                // Check if we have transaction data from callback
+                if ($mpesaTransaction) {
+                    return response()->json([
+                        'success' => true,
+                        'payment_confirmed' => $mpesaTransaction->result_code == 0,
+                        'data' => [
+                            'order' => null,
+                            'transaction' => [
+                                'result_code' => $mpesaTransaction->result_code,
+                                'result_desc' => $mpesaTransaction->result_desc,
+                                'mpesa_receipt_number' => $mpesaTransaction->mpesa_receipt_number,
+                                'transaction_date' => $mpesaTransaction->transaction_date,
+                                'amount' => $mpesaTransaction->amount,
+                                'phone_number' => $mpesaTransaction->phone_number,
+                            ]
+                        ]
+                    ]);
+                }
+                
+                return response()->json([
+                    'success' => false,
+                    'payment_confirmed' => false,
+                    'error' => 'Payment order not found',
+                    'status' => 'not_found'
+                ], 404);
+            }
+
+            // Return payment order with transaction data
+            return response()->json([
+                'success' => true,
+                'payment_confirmed' => $paymentOrder->status === 'completed' && $mpesaTransaction && $mpesaTransaction->result_code == 0,
+                'data' => [
+                    'order' => [
+                        'order_reference' => $paymentOrder->order_reference,
+                        'status' => $paymentOrder->status,
+                        'customer_name' => $paymentOrder->customer_name,
+                        'product_name' => $paymentOrder->product_name,
+                        'paid_amount' => $paymentOrder->paid_amount,
+                        'payment_completed_at' => $paymentOrder->payment_completed_at,
+                        'mpesa_receipt_number' => $paymentOrder->mpesa_receipt_number,
+                        'payment_type' => $paymentOrder->payment_type,
+                        'plan_type' => $paymentOrder->plan_type,
+                    ],
+                    'transaction' => $mpesaTransaction ? [
+                        'result_code' => $mpesaTransaction->result_code,
+                        'result_desc' => $mpesaTransaction->result_desc,
+                        'mpesa_receipt_number' => $mpesaTransaction->mpesa_receipt_number,
+                        'transaction_date' => $mpesaTransaction->transaction_date,
+                        'amount' => $mpesaTransaction->amount,
+                        'phone_number' => $mpesaTransaction->phone_number,
+                    ] : null
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting payment order status:', [
+                'error' => $e->getMessage(),
+                'checkout_request_id' => $request->checkout_request_id
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'payment_confirmed' => false,
+                'error' => 'Failed to get payment order status'
+            ], 500);
+        }
+    }
+
+    /**
      * Process successful payment - integrate with PayGo system
      */
     private function processSuccessfulPayment(MpesaTransaction $transaction)
     {
         try {
-            // TODO: Implement payment processing logic
-            // 1. Find the payment plan by account reference
-            // 2. Update payment plan status
-            // 3. Create payment record
-            // 4. Trigger IoT device activation if needed
-            // 5. Send SMS confirmation
+            // Find and update payment order
+            $paymentOrder = PaymentOrder::where('checkout_request_id', $transaction->checkout_request_id)->first();
             
-            Log::info('Processing successful payment for transaction:', $transaction->toArray());
+            if ($paymentOrder) {
+                $paymentOrder->update([
+                    'status' => 'completed',
+                    'mpesa_receipt_number' => $transaction->mpesa_receipt_number,
+                    'payment_completed_at' => $transaction->transaction_date ?? now(),
+                ]);
+
+                Log::info('Payment order completed:', [
+                    'order_reference' => $paymentOrder->order_reference,
+                    'customer_name' => $paymentOrder->customer_name,
+                    'amount' => $paymentOrder->paid_amount,
+                    'mpesa_receipt' => $transaction->mpesa_receipt_number
+                ]);
+
+                // TODO: Additional business logic
+                // 1. Trigger IoT device activation if needed
+                // 2. Send SMS confirmation to customer
+                // 3. Send email receipt
+                // 4. Create delivery order
+                // 5. Update inventory
+                
+            } else {
+                Log::warning('No payment order found for successful transaction:', [
+                    'checkout_request_id' => $transaction->checkout_request_id,
+                    'transaction_id' => $transaction->id
+                ]);
+            }
             
         } catch (\Exception $e) {
             Log::error('Error processing successful payment:', [
                 'transaction_id' => $transaction->id,
+                'checkout_request_id' => $transaction->checkout_request_id,
+                'error' => $e->getMessage()
+            ]);
+        }
+    }
+
+    /**
+     * Process failed payment - integrate with PayGo system
+     */
+    private function processFailedPayment(MpesaTransaction $transaction)
+    {
+        try {
+            // Find and update payment order
+            $paymentOrder = PaymentOrder::where('checkout_request_id', $transaction->checkout_request_id)->first();
+            
+            if ($paymentOrder) {
+                $paymentOrder->update([
+                    'status' => 'failed',
+                    'payment_completed_at' => $transaction->transaction_date ?? now(),
+                ]);
+
+                Log::warning('Payment order failed:', [
+                    'order_reference' => $paymentOrder->order_reference,
+                    'customer_name' => $paymentOrder->customer_name,
+                    'amount' => $paymentOrder->paid_amount,
+                    'mpesa_receipt' => $transaction->mpesa_receipt_number,
+                    'reason' => $transaction->result_desc
+                ]);
+
+                // TODO: Additional business logic for failed payments
+                // 1. Send SMS notification to customer
+                // 2. Send email receipt (if applicable)
+                // 3. Log the failure reason
+            } else {
+                Log::warning('No payment order found for failed transaction:', [
+                    'checkout_request_id' => $transaction->checkout_request_id,
+                    'transaction_id' => $transaction->id
+                ]);
+            }
+            
+        } catch (\Exception $e) {
+            Log::error('Error processing failed payment:', [
+                'transaction_id' => $transaction->id,
+                'checkout_request_id' => $transaction->checkout_request_id,
                 'error' => $e->getMessage()
             ]);
         }

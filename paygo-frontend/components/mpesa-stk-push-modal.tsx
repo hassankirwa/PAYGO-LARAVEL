@@ -5,8 +5,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Smartphone, Loader2, CheckCircle, XCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { authService } from "@/lib/auth"
+import { getApiUrl } from "@/lib/api-config"
 
 interface MpesaStkPushModalProps {
   isOpen: boolean
@@ -14,6 +17,15 @@ interface MpesaStkPushModalProps {
   productName: string
   paymentAmount: number
   paymentType: string
+  // Enhanced props for payment order
+  quoteId?: string
+  productId?: number
+  productPrice?: number
+  planType?: string
+  downPaymentAmount?: number
+  installmentAmount?: number
+  totalInstallments?: number
+  planDuration?: string
 }
 
 export function MpesaStkPushModal({
@@ -22,6 +34,14 @@ export function MpesaStkPushModal({
   productName,
   paymentAmount,
   paymentType,
+  quoteId = '',
+  productId = 0,
+  productPrice = 0,
+  planType = '',
+  downPaymentAmount = 0,
+  installmentAmount = 0,
+  totalInstallments = 0,
+  planDuration = '',
 }: MpesaStkPushModalProps) {
   const { toast } = useToast()
   const [phoneNumber, setPhoneNumber] = useState("")
@@ -29,6 +49,18 @@ export function MpesaStkPushModal({
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle')
   const [statusMessage, setStatusMessage] = useState("")
   const [checkoutRequestId, setCheckoutRequestId] = useState("")
+  const [orderReference, setOrderReference] = useState("")
+  const [paymentDetails, setPaymentDetails] = useState<{
+    receipt: string;
+    amount: number;
+    orderRef: string;
+    customerName: string;
+    productName: string;
+    paymentType: string;
+    planType?: string;
+    installmentAmount?: number;
+    nextPaymentDate?: string;
+  } | null>(null)
 
   const formatPhoneNumber = (phone: string) => {
     // Remove any non-digit characters
@@ -49,6 +81,75 @@ export function MpesaStkPushModal({
 
   const generateAccountReference = () => {
     return `KOYO_${Date.now()}_${Math.floor(Math.random() * 1000)}`
+  }
+
+  const createPaymentOrder = async (checkoutRequestId: string, customerPhone: string) => {
+    try {
+      
+      // Get current user data if authenticated
+      let customerName = 'Guest Customer'
+      let customerEmail = 'guest@example.com'
+      
+      try {
+        if (authService.isAuthenticated()) {
+          const currentUser = await authService.getCurrentUser()
+          if (currentUser) {
+            customerName = currentUser.first_name && currentUser.last_name 
+              ? `${currentUser.first_name} ${currentUser.last_name}`
+              : currentUser.name || 'Registered Customer'
+            customerEmail = currentUser.email
+          }
+        }
+      } catch (userError) {
+        console.log('Could not get user data, using defaults')
+      }
+
+      const paymentOrderData = {
+        quote_id: quoteId || `QUOTE_${Date.now()}`,
+        checkout_request_id: checkoutRequestId,
+        customer_name: customerName,
+        customer_email: customerEmail,
+        customer_phone: customerPhone,
+        mpesa_phone_number: customerPhone,
+        product_id: productId,
+        product_name: productName,
+        product_price: productPrice || paymentAmount,
+        payment_type: paymentType === 'Down Payment' ? 'down_payment' : 
+                     paymentType === 'Full Payment' ? 'full_payment' : 'installment',
+        paid_amount: paymentAmount,
+        plan_type: planType,
+        down_payment_amount: downPaymentAmount,
+        installment_amount: installmentAmount,
+        total_installments: totalInstallments,
+        plan_duration: planDuration,
+      }
+
+      console.log('📝 Creating payment order:', paymentOrderData)
+
+      const createOrderUrl = await getApiUrl('/mpesa/create-payment-order')
+      const response = await fetch(createOrderUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
+          ...(authService.isAuthenticated() ? { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` } : {})
+        },
+        body: JSON.stringify(paymentOrderData)
+      })
+
+      const data = await response.json()
+      
+      if (data.success) {
+        setOrderReference(data.data.order_reference)
+        console.log('✅ Payment order created:', data.data)
+      } else {
+        console.error('❌ Failed to create payment order:', data)
+      }
+      
+    } catch (error) {
+      console.error('❌ Error creating payment order:', error)
+    }
   }
 
   const handleStkPush = async () => {
@@ -79,112 +180,276 @@ export function MpesaStkPushModal({
     try {
       const accountReference = generateAccountReference()
       
-      const response = await fetch('/api/mpesa/stk-push', {
+      // Ensure amount is a whole number (M-Pesa doesn't accept decimals)
+      const wholeAmount = Math.round(paymentAmount)
+      
+      const stkPushUrl = await getApiUrl('/mpesa/stk-push')
+      
+      console.log('🔄 Initiating M-Pesa STK Push:', {
+        phone_number: formattedPhone,
+        amount: wholeAmount,
+        account_reference: accountReference,
+        api_url: stkPushUrl
+      })
+      
+      const response = await fetch(stkPushUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true',
         },
         body: JSON.stringify({
           phone_number: formattedPhone,
-          amount: paymentAmount,
+          amount: wholeAmount,
           account_reference: accountReference,
           transaction_desc: `${paymentType} - ${productName}`
         })
       })
 
       const data = await response.json()
+      
+      console.log('📡 M-Pesa STK Push API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        data: data
+      })
 
-      if (data.success) {
+      // First, let's validate we have the expected response structure
+      if (!data.success || !data.data || !data.data.response_code) {
+        console.error('❌ Invalid STK Push response structure:', data)
+        setStatusMessage("Invalid response from payment service")
+        setPaymentStatus('error')
+        toast({
+          title: "Payment System Error",
+          description: "Received invalid response from payment service",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Log the M-Pesa immediate response details for debugging
+      console.log('🔍 M-Pesa STK Push Immediate Response:', {
+        merchant_request_id: data.data.merchant_request_id,
+        checkout_request_id: data.data.checkout_request_id,
+        response_code: data.data.response_code,
+        response_description: data.data.response_description,
+        customer_message: data.data.customer_message
+      })
+      
+      // Show response structure to user for transparency
+      console.log('📋 Expected M-Pesa Response Structure:', {
+        example: {
+          "MerchantRequestID": "6c18-4011-b59a-13f0511045e611589",
+          "CheckoutRequestID": "ws_CO_21072025160920038708374149", 
+          "ResponseCode": "0",
+          "ResponseDescription": "Success. Request accepted for processing",
+          "CustomerMessage": "Success. Request accepted for processing"
+        }
+      })
+
+      // Check M-Pesa ResponseCode from immediate response
+      if (data.data.response_code === "0") {
+        // ✅ STK Push accepted by M-Pesa (ResponseCode = "0")
         setCheckoutRequestId(data.data.checkout_request_id)
-        setStatusMessage("STK Push sent! Please check your phone and enter your M-Pesa PIN.")
+        setStatusMessage("✅ Request accepted! M-Pesa prompt sent to your phone...")
         setPaymentStatus('processing')
         
-        // Start polling for payment status
-        pollPaymentStatus(data.data.checkout_request_id)
+        console.log('✅ M-Pesa STK Push Accepted - Full Response:', {
+          merchant_request_id: data.data.merchant_request_id,
+          checkout_request_id: data.data.checkout_request_id,
+          response_code: data.data.response_code,
+          response_description: data.data.response_description,
+          customer_message: data.data.customer_message
+        })
+        
+        // Show success feedback with M-Pesa's exact message
+        toast({
+          title: "✅ STK Push Sent Successfully!",
+          description: data.data.customer_message || data.data.response_description,
+          variant: "default",
+        })
+        
+        // Create payment order
+        await createPaymentOrder(data.data.checkout_request_id, formattedPhone)
+        
+        // Now wait for user to complete payment (M-Pesa callback will come later)
+        setTimeout(() => {
+          setStatusMessage("Waiting for you to complete payment on your phone...")
+          waitForCallback(data.data.checkout_request_id)
+        }, 2000) // Give user 2 seconds to see the success message
+        
       } else {
-        setStatusMessage(data.error || "Payment initiation failed")
+        // ❌ STK Push rejected by M-Pesa (ResponseCode ≠ "0")
+        // When STK Push fails, M-Pesa still returns the same structure but with different ResponseCode
+        // Example failed response:
+        // {
+        //   "MerchantRequestID": "...",
+        //   "CheckoutRequestID": "...", 
+        //   "ResponseCode": "1", // or other error code
+        //   "ResponseDescription": "Insufficient funds",
+        //   "CustomerMessage": "Insufficient funds in account"
+        // }
+        
+        console.error('❌ M-Pesa STK Push Rejected - Full Response:', {
+          merchant_request_id: data.data.merchant_request_id,
+          checkout_request_id: data.data.checkout_request_id,
+          response_code: data.data.response_code,
+          response_description: data.data.response_description,
+          customer_message: data.data.customer_message
+        })
+        
+        const errorMessage = data.data.response_description || data.data.customer_message || "M-Pesa rejected the payment request"
+        setStatusMessage(`❌ Request rejected: ${errorMessage}`)
         setPaymentStatus('error')
+        
+        toast({
+          title: "❌ M-Pesa Request Rejected",
+          description: `${errorMessage} (Code: ${data.data.response_code})`,
+          variant: "destructive",
+        })
+        
+        // No callback expected when STK Push is rejected (ResponseCode ≠ "0")
       }
     } catch (error) {
-      console.error('STK Push error:', error)
-      setStatusMessage("Network error. Please try again.")
+      console.error('❌ STK Push network error:', error)
+      setStatusMessage("Network error. Please check your connection and try again.")
       setPaymentStatus('error')
+      
+      toast({
+        title: "Network Error",
+        description: "Unable to connect to payment service. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setIsProcessing(false)
     }
   }
 
-  const pollPaymentStatus = async (checkoutId: string) => {
-    let attempts = 0
-    const maxAttempts = 30 // Poll for 5 minutes (30 * 10 seconds)
+  const waitForCallback = async (checkoutId: string) => {
+    console.log('⏳ STEP 2: STK Push was accepted (ResponseCode=0), now waiting for payment completion callback:', checkoutId)
+    console.log('📱 User should now see M-Pesa prompt on their phone and enter PIN...')
     
-    const poll = async () => {
+    // STEP 1 ✅ COMPLETED: STK Push response processed (ResponseCode=0)
+    // STEP 2 🔄 IN PROGRESS: Waiting for user to complete payment and M-Pesa callback
+    let attempts = 0
+    const maxAttempts = 12 // Check for 2 minutes (12 * 10 seconds)
+    
+    const checkCallbackResult = async () => {
       try {
-        const response = await fetch('/api/mpesa/stk-query', {
+        const orderStatusUrl = await getApiUrl('/mpesa/payment-order-status')
+        
+        console.log('🔍 Checking M-Pesa callback result:', {
+          checkout_request_id: checkoutId,
+          attempt: attempts + 1
+        })
+        
+        const response = await fetch(orderStatusUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'ngrok-skip-browser-warning': 'true',
           },
           body: JSON.stringify({
             checkout_request_id: checkoutId
           })
         })
 
-        const data = await response.json()
+        const result = await response.json()
         
-        if (data.success && data.data.ResultCode !== undefined) {
-          if (data.data.ResultCode === "0") {
-            // Payment successful
-            setStatusMessage("Payment successful! Thank you.")
+        if (result.success && result.payment_confirmed && result.data.transaction) {
+          const transaction = result.data.transaction
+          const order = result.data.order
+          
+          if (transaction.result_code === 0) {
+            // Payment successful - callback received
+            const nextPaymentDate = paymentType === 'Down Payment' && installmentAmount > 0 
+              ? new Date(Date.now() + (planType === 'weekly' ? 7 : 30) * 24 * 60 * 60 * 1000)
+              : null
+            
+            setPaymentDetails({
+              receipt: transaction.mpesa_receipt_number,
+              amount: transaction.amount || paymentAmount,
+              orderRef: order?.order_reference || `KOYO-${Date.now()}`,
+              customerName: order?.customer_name || 'Customer',
+              productName: order?.product_name || productName,
+              paymentType: paymentType,
+              planType: planType,
+              installmentAmount: installmentAmount,
+              nextPaymentDate: nextPaymentDate?.toLocaleDateString('en-GB') || undefined
+            })
+            
+            setStatusMessage(`Payment successful! M-Pesa callback confirmed.`)
             setPaymentStatus('success')
             
-            // Auto-close modal after 3 seconds
-            setTimeout(() => {
-              onClose()
-              // Reset state
-              setPaymentStatus('idle')
-              setStatusMessage("")
-              setPhoneNumber("")
-              setCheckoutRequestId("")
-            }, 3000)
+            toast({
+              title: "Payment Confirmed! 🎉",
+              description: `Receipt: ${transaction.mpesa_receipt_number}`,
+              variant: "default",
+            })
+            
+            return // Success - stop checking
+            
           } else {
-            // Payment failed or cancelled
-            setStatusMessage(data.data.ResultDesc || "Payment was cancelled or failed")
+            // Payment failed - callback received with error
+            setStatusMessage(transaction.result_desc || "Payment failed")
             setPaymentStatus('error')
-          }
-        } else {
-          // Still processing, continue polling
-          attempts++
-          if (attempts < maxAttempts) {
-            setTimeout(poll, 10000) // Poll every 10 seconds
-          } else {
-            setStatusMessage("Payment status check timed out. Please verify manually.")
-            setPaymentStatus('error')
+            
+            toast({
+              title: "Payment Failed",
+              description: transaction.result_desc || "Payment was not successful",
+              variant: "destructive",
+            })
+            
+            return // Failed - stop checking
           }
         }
-      } catch (error) {
-        console.error('Status check error:', error)
+        
+        // No callback yet - continue waiting (STK was sent successfully, ResponseCode=0)
         attempts++
         if (attempts < maxAttempts) {
-          setTimeout(poll, 10000)
+          setStatusMessage(`Waiting for payment completion... Please enter M-Pesa PIN on your phone (${attempts}/${maxAttempts})`)
+          setTimeout(checkCallbackResult, 10000) // Check every 10 seconds
         } else {
-          setStatusMessage("Unable to verify payment status")
+          // Timeout - but payment might still be processing
+          setStatusMessage("No payment confirmation received. Check your M-Pesa messages or contact support.")
+          setPaymentStatus('error')
+          
+          toast({
+            title: "Payment Confirmation Timeout",
+            description: "We didn't receive payment confirmation from M-Pesa. Check your messages or contact support if payment was made.",
+            variant: "destructive",
+          })
+        }
+        
+      } catch (error) {
+        console.error('Callback check error:', error)
+        attempts++
+        if (attempts < maxAttempts) {
+          setTimeout(checkCallbackResult, 10000)
+        } else {
+          setStatusMessage("Unable to check payment status. Please verify with M-Pesa.")
           setPaymentStatus('error')
         }
       }
     }
 
-    // Start polling after 5 seconds (give time for payment to be processed)
-    setTimeout(poll, 5000)
+    // Start checking for callback result
+    setTimeout(checkCallbackResult, 5000) // Wait 5 seconds before first check
   }
 
   const handleClose = () => {
-    setPaymentStatus('idle')
-    setStatusMessage("")
-    setPhoneNumber("")
-    setCheckoutRequestId("")
-    setIsProcessing(false)
-    onClose()
+    if (!isProcessing) {
+      onClose()
+      // Reset all state
+      setPaymentStatus('idle')
+      setStatusMessage("")
+      setPhoneNumber("")
+      setCheckoutRequestId("")
+      setOrderReference("")
+      setPaymentDetails(null)
+    }
   }
 
   return (
@@ -197,30 +462,81 @@ export function MpesaStkPushModal({
         </DialogHeader>
         
         <div className="mt-4 mb-6 text-center">
-          <p className="text-xl font-semibold">Payment: KSh {paymentAmount.toLocaleString()}</p>
+          <p className="text-xl font-semibold">Payment: KSh {Math.round(paymentAmount).toLocaleString()}</p>
           <p className="text-sm text-gray-500 mt-1">
             {productName} - {paymentType}
           </p>
         </div>
 
-        {paymentStatus !== 'idle' && (
-          <Alert className={`mb-4 ${
-            paymentStatus === 'success' ? 'border-green-200 bg-green-50' :
-            paymentStatus === 'error' ? 'border-red-200 bg-red-50' :
-            'border-blue-200 bg-blue-50'
-          }`}>
-            <div className="flex items-center gap-2">
-              {paymentStatus === 'processing' && <Loader2 className="h-4 w-4 animate-spin" />}
-              {paymentStatus === 'success' && <CheckCircle className="h-4 w-4 text-green-600" />}
-              {paymentStatus === 'error' && <XCircle className="h-4 w-4 text-red-600" />}
-              <AlertDescription className={
-                paymentStatus === 'success' ? 'text-green-800' :
-                paymentStatus === 'error' ? 'text-red-800' :
-                'text-blue-800'
-              }>
-                {statusMessage}
-              </AlertDescription>
-            </div>
+        {(statusMessage || paymentStatus !== 'idle') && (
+          <Alert className={`
+            ${paymentStatus === 'success' ? 'border-green-500 bg-green-50' : 
+              paymentStatus === 'error' ? 'border-red-500 bg-red-50' : 
+              'border-blue-500 bg-blue-50'}
+          `}>
+            {paymentStatus === 'success' && paymentDetails ? (
+              // Comprehensive Payment Success Display
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                  <div className="font-semibold text-green-800 text-lg">Payment Successful!</div>
+                </div>
+                
+                <div className="bg-white p-4 rounded-lg border border-green-200">
+                  <div className="text-green-800 font-medium mb-2">
+                    Your {paymentDetails.paymentType.toLowerCase()} of KSh {Math.round(paymentDetails.amount).toLocaleString()} has been processed successfully.
+                  </div>
+                  
+                  <div className="space-y-3 mt-4">
+                    <div className="font-semibold text-gray-800 mb-2">What happens next?</div>
+                    <ul className="space-y-2 text-sm text-gray-700">
+                      <li className="flex items-start gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-2 flex-shrink-0"></div>
+                        <span>Your KOYO fridge will be delivered within 3-5 business days</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-2 flex-shrink-0"></div>
+                        <span>Our technician will install and activate your device</span>
+                      </li>
+                      {paymentDetails.paymentType === 'Down Payment' && paymentDetails.installmentAmount && paymentDetails.nextPaymentDate && (
+                        <li className="flex items-start gap-2">
+                          <div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-2 flex-shrink-0"></div>
+                          <span>Your first monthly payment of KSh {Math.round(paymentDetails.installmentAmount).toLocaleString()} is due on {paymentDetails.nextPaymentDate}</span>
+                        </li>
+                      )}
+                      <li className="flex items-start gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-2 flex-shrink-0"></div>
+                        <span>You'll receive SMS reminders before each payment</span>
+                      </li>
+                    </ul>
+                  </div>
+                  
+                  <div className="mt-4 pt-3 border-t border-gray-200">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-500">Receipt:</span>
+                        <div className="font-mono font-medium">{paymentDetails.receipt}</div>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Order Ref:</span>
+                        <div className="font-mono font-medium">{paymentDetails.orderRef}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              // Standard status message for processing/error states
+              <div className="flex items-center gap-2">
+                {paymentStatus === 'processing' && <Loader2 className="h-4 w-4 animate-spin" />}
+                {paymentStatus === 'error' && <XCircle className="h-4 w-4 text-red-600" />}
+                <AlertDescription className={
+                  paymentStatus === 'error' ? 'text-red-800' : 'text-blue-800'
+                }>
+                  {statusMessage}
+                </AlertDescription>
+              </div>
+            )}
           </Alert>
         )}
 
@@ -260,7 +576,7 @@ export function MpesaStkPushModal({
               ) : (
                 <>
                   <Smartphone className="h-4 w-4 mr-2" />
-                  Pay KSh {paymentAmount.toLocaleString()}
+                  Pay KSh {Math.round(paymentAmount).toLocaleString()}
                 </>
               )}
             </Button>

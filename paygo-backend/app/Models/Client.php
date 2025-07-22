@@ -34,10 +34,6 @@ class Client extends Authenticatable
         'nationality',
         'address_latitude',
         'address_longitude',
-        'occupation',
-        'monthly_income',
-        'income_source',
-        'income_verification_notes',
         
         // Business Information (Story 3.3)
         'is_business_customer',
@@ -47,6 +43,7 @@ class Client extends Authenticatable
         'business_industry',
         'business_address',
         'business_employees',
+        'kra_pin',
         
         // Reference and Emergency Contacts (Story 3.4)
         'reference_contacts',
@@ -66,7 +63,6 @@ class Client extends Authenticatable
         // Document Upload and Verification (Story 3.6)
         'id_document_front_path',
         'id_document_back_path',
-        'proof_of_income_path',
         'business_license_path',
         'profile_photo_path',
         'document_verification_status',
@@ -177,7 +173,7 @@ class Client extends Authenticatable
     {
         $requiredFields = [
             'first_name', 'last_name', 'email', 'phone', 'date_of_birth',
-            'national_id', 'address', 'occupation', 'monthly_income'
+            'national_id', 'address'
         ];
         
         $completedFields = 0;

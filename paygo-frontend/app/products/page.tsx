@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Search, Filter, Loader2, Scale, ArrowLeft } from "lucide-react"
-import { productApi, type Product, type ProductCategory, type ProductFilters, convertLaravelProduct } from "@/lib/api"
+import { productApi, type Product, type ProductCategory, type ProductFilters, convertLaravelProduct, formatKshPrice } from "@/lib/api"
 import { useComparison } from "@/lib/comparison"
 
 export default function ProductsPage() {
@@ -301,7 +301,7 @@ export default function ProductsPage() {
                 {/* Price Range */}
                 <div>
                   <label className="block text-sm font-medium mb-2">
-                    Price Range: ${priceRange[0]} - ${priceRange[1]}
+                    Price Range: {formatKshPrice(priceRange[0])} - {formatKshPrice(priceRange[1])}
                   </label>
                   <Slider
                     value={priceRange}
@@ -405,9 +405,9 @@ export default function ProductsPage() {
                         {product.description_text && (
                           <p className="text-sm mb-4 opacity-90">{product.description_text}</p>
                         )}
-                        <p className="text-xl font-semibold mb-1">Price: ${product.price_usd} USD</p>
+                        <p className="text-xl font-semibold mb-1">Price: {formatKshPrice(product.price_ksh)}</p>
                         <p className="text-lg font-medium mb-4">
-                          Starting at ${product.weekly_installment_usd}/week with PayGo
+                          Starting at {formatKshPrice(product.weekly_installment_ksh)}/week with PayGo
                         </p>
                         <div className="space-y-1 text-sm mb-4">
                           <p>💳 PayGo: {frontendProduct.paygoWarranty} warranty</p>

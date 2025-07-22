@@ -40,7 +40,7 @@ class PayGoPlanController extends Controller
                         'id' => $product->id,
                         'name' => $product->name,
                         'model_code' => $product->model_code,
-                        'price_usd' => $product->price_usd,
+                        'price_ksh' => $product->price_ksh,
                     ],
                     'available_plans' => $plans,
                     'plan_summary' => [
@@ -82,7 +82,7 @@ class PayGoPlanController extends Controller
                     'product' => [
                         'id' => $product->id,
                         'name' => $product->name,
-                        'price_usd' => $product->price_usd,
+                        'price_ksh' => $product->price_ksh,
                     ],
                     'custom_plan' => $plan
                 ]
@@ -129,7 +129,7 @@ class PayGoPlanController extends Controller
                     'product' => [
                         'id' => $product->id,
                         'name' => $product->name,
-                        'price_usd' => $product->price_usd,
+                        'price_ksh' => $product->price_ksh,
                     ],
                     'comparison' => $comparison
                 ]
@@ -168,7 +168,7 @@ class PayGoPlanController extends Controller
                     'product' => [
                         'id' => $product->id,
                         'name' => $product->name,
-                        'price_usd' => $product->price_usd,
+                        'price_ksh' => $product->price_ksh,
                     ],
                     'budget_constraints' => $budget,
                     'recommendations' => $recommendations
@@ -266,7 +266,7 @@ class PayGoPlanController extends Controller
                     'product' => [
                         'id' => $product->id,
                         'name' => $product->name,
-                        'price_usd' => $product->price_usd,
+                        'price_ksh' => $product->price_ksh,
                     ],
                     'plan_summary' => [
                         'frequency' => $plan['frequency'],

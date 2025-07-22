@@ -93,6 +93,13 @@
 - Down payment range validation and constraints
 - Popular plan quick-select options
 - Plan selection modal with terms acceptance
+- **Bug Fix**: Updated frontend to use KSh fields (price_ksh, weekly_installment_ksh) instead of USD
+- **Bug Fix**: Fixed formatUsdToKes import error - replaced with formatKshPrice function
+- **Bug Fix**: Fixed products not loading on home page - ProductSeeder was not being called in DatabaseSeeder
+- **Bug Fix**: Fixed PayGo plan calculator currency issues - updated all product.price to product.price_ksh
+- **Bug Fix**: Fixed PayGo plan calculator formatting - replaced formatPrice with formatKshPrice
+- **Bug Fix**: Fixed plan selection modal currency issues - updated to use KSh formatting
+- **Testing**: Added SimpleProductsTest and PayGoCalculatorTest components to verify fixes
 
 ### Task 2.4: Terms and Conditions Implementation
 **Description**: Comprehensive terms and conditions page with legal compliance  
@@ -139,26 +146,37 @@
 **Description**: Build comprehensive customer registration with KYC  
 **Priority**: High  
 **Estimated Time**: 16 hours  
-**Status**: ✅ Complete  
+**Status**: ✅ Complete (Updated - Simplified)
 
 **Sub-tasks**:
-- [x] Multi-step registration form
-- [x] Document upload interface
+- [x] Multi-step registration form (simplified to 4 steps)
+- [x] Document upload interface (proof of income removed)
 - [x] Photo capture for ID verification
 - [x] Address input with GPS integration
-- [x] Reference contacts management
+- [x] Reference contacts management (reduced to 1 contact)
+
+**Recent Updates (Simplified KYC Process)**:
+- **✅ REMOVED**: Occupation, monthly income, income source fields
+- **✅ UPDATED**: Business information fields all optional
+- **✅ ADDED**: KRA PIN field for business customers
+- **✅ REDUCED**: Reference contacts from 2-3 to 1
+- **✅ REMOVED**: Proof of income document requirement
+- **✅ UPDATED**: Validation logic simplified
+- **✅ IMPLEMENTED**: Immediate client portal access after registration
 
 **Implementation Notes**:
-- Complete 5-step registration process with visual progress tracking
+- Complete 4-step registration process with visual progress tracking
 - Step 1: Account Setup with terms acceptance
-- Step 2: Personal Information with GPS location and business info toggle
-- Step 3: Emergency and Reference Contacts with validation
-- Step 4: Document Upload with drag-and-drop and camera integration
-- Step 5: Review and Submit with comprehensive information display
+- Step 2: Personal Information (simplified) with GPS location and business info toggle
+- Step 3: Emergency and Reference Contacts (1 reference contact)
+- Step 4: Document Upload with drag-and-drop and camera integration (no income docs)
+- Step 5: ~~Review and Submit~~ (removed, immediate access granted)
 - Real-time validation and step-by-step progression
 - Responsive design with mobile optimization
 - Integration with PayGo plan context from Story 2
 - Comprehensive error handling and user guidance
+- **NEW**: Demo credentials created (admin@koyo.com/admin123, client@example.com/client123)
+- **NEW**: Immediate access to client portal after registration
 
 ### Task 3.3: Payment Integration
 **Description**: Integrate M-Pesa and other payment methods  

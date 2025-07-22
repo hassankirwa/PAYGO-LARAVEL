@@ -46,9 +46,6 @@ interface RegistrationData {
   national_id: string
   nationality: string
   address: string
-  occupation: string
-  monthly_income: string
-  income_source: string
   latitude?: number
   longitude?: number
   
@@ -57,6 +54,7 @@ interface RegistrationData {
   business_name?: string
   business_type?: string
   business_registration_number?: string
+  kra_pin?: string
   
   // Step 4: Contact Information
   emergency_contact_name: string
@@ -73,9 +71,8 @@ interface RegistrationData {
 interface DocumentFiles {
   id_document_front?: File
   id_document_back?: File
-  proof_of_income?: File
-  profile_photo?: File
   business_license?: File
+  profile_photo?: File
 }
 
 const steps = [
@@ -113,15 +110,11 @@ export default function RegisterPage() {
     national_id: '',
     nationality: 'Kenyan',
     address: '',
-    occupation: '',
-    monthly_income: '',
-    income_source: '',
     is_business_customer: false,
     emergency_contact_name: '',
     emergency_contact_phone: '',
     emergency_contact_relationship: '',
     reference_contacts: [
-      { name: '', phone: '', relationship: '', email: '' },
       { name: '', phone: '', relationship: '', email: '' }
     ]
   })
@@ -201,13 +194,11 @@ export default function RegisterPage() {
                   formData.phone && formData.password && formData.password_confirmation &&
                   formData.terms_accepted && formData.password === formData.password_confirmation)
       case 2:
-        return !!(formData.date_of_birth && formData.national_id && formData.address && 
-                  formData.occupation && formData.monthly_income && formData.income_source)
+        return !!(formData.date_of_birth && formData.national_id && formData.address)
       case 3:
         return !!(formData.emergency_contact_name && formData.emergency_contact_phone &&
                   formData.emergency_contact_relationship &&
-                  formData.reference_contacts[0].name && formData.reference_contacts[0].phone &&
-                  formData.reference_contacts[1].name && formData.reference_contacts[1].phone)
+                  formData.reference_contacts[0].name && formData.reference_contacts[0].phone)
       case 4:
         return !!(documents.id_document_front && documents.id_document_back)
       default:
@@ -281,15 +272,13 @@ export default function RegisterPage() {
           national_id: formData.national_id,
           nationality: formData.nationality,
           address: formData.address,
-          occupation: formData.occupation,
-          monthly_income: parseFloat(formData.monthly_income),
-          income_source: formData.income_source,
           latitude: formData.latitude,
           longitude: formData.longitude,
           is_business_customer: formData.is_business_customer,
           business_name: formData.business_name,
           business_type: formData.business_type,
-          business_registration_number: formData.business_registration_number
+          business_registration_number: formData.business_registration_number,
+          kra_pin: formData.kra_pin
         })
       })
 
@@ -618,52 +607,6 @@ export default function RegisterPage() {
                         </Button>
                       </div>
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="occupation">Occupation *</Label>
-                        <Input
-                          id="occupation"
-                          value={formData.occupation}
-                          onChange={(e) => handleInputChange('occupation', e.target.value)}
-                          placeholder="Your profession"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="income_source">Income Source *</Label>
-                        <Select 
-                          value={formData.income_source} 
-                          onValueChange={(value) => handleInputChange('income_source', value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select income source" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="salary">Salary</SelectItem>
-                            <SelectItem value="business">Business</SelectItem>
-                            <SelectItem value="farming">Farming</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <Label htmlFor="monthly_income" className="flex items-center space-x-2">
-                        <DollarSign className="h-4 w-4" />
-                        <span>Monthly Income (KES) *</span>
-                      </Label>
-                      <Input
-                        id="monthly_income"
-                        type="number"
-                        value={formData.monthly_income}
-                        onChange={(e) => handleInputChange('monthly_income', e.target.value)}
-                        placeholder="25000"
-                        min="0"
-                        required
-                      />
-                    </div>
                   </CardContent>
                 </Card>
 
@@ -691,24 +634,22 @@ export default function RegisterPage() {
                     {formData.is_business_customer && (
                       <>
                         <div>
-                          <Label htmlFor="business_name">Business Name *</Label>
+                          <Label htmlFor="business_name">Business Name</Label>
                           <Input
                             id="business_name"
                             value={formData.business_name || ''}
                             onChange={(e) => handleInputChange('business_name', e.target.value)}
                             placeholder="Your business name"
-                            required={formData.is_business_customer}
                           />
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <Label htmlFor="business_type">Business Type *</Label>
+                            <Label htmlFor="business_type">Business Type</Label>
                             <Input
                               id="business_type"
                               value={formData.business_type || ''}
                               onChange={(e) => handleInputChange('business_type', e.target.value)}
                               placeholder="e.g., Retail, Restaurant"
-                              required={formData.is_business_customer}
                             />
                           </div>
                           <div>
@@ -720,6 +661,15 @@ export default function RegisterPage() {
                               placeholder="Business registration number"
                             />
                           </div>
+                        </div>
+                        <div>
+                          <Label htmlFor="kra_pin">KRA PIN (Optional)</Label>
+                          <Input
+                            id="kra_pin"
+                            value={formData.kra_pin || ''}
+                            onChange={(e) => handleInputChange('kra_pin', e.target.value)}
+                            placeholder="Your KRA PIN"
+                          />
                         </div>
                       </>
                     )}
@@ -794,14 +744,14 @@ export default function RegisterPage() {
                       <span>Reference Contacts</span>
                     </CardTitle>
                     <CardDescription>
-                      Provide at least 2 reference contacts who can vouch for you
+                      Provide at least 1 reference contact who can vouch for you
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {formData.reference_contacts.map((contact, index) => (
+                    {formData.reference_contacts.slice(0, 1).map((contact, index) => (
                       <div key={index} className="p-4 border rounded-lg space-y-4">
                         <div className="flex items-center justify-between">
-                          <h4 className="font-medium">Reference Contact {index + 1}</h4>
+                          <h4 className="font-medium">Reference Contact</h4>
                           <Badge variant="outline">Required</Badge>
                         </div>
                         
@@ -953,25 +903,6 @@ export default function RegisterPage() {
                       </div>
                     </div>
 
-                    <div>
-                      <Label htmlFor="proof_income">Proof of Income</Label>
-                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
-                        <input
-                          type="file"
-                          id="proof_income"
-                          accept="image/*,.pdf,.doc,.docx"
-                          onChange={(e) => handleFileChange('proof_of_income', e.target.files?.[0] || null)}
-                          className="hidden"
-                        />
-                        <Label htmlFor="proof_income" className="cursor-pointer flex flex-col items-center space-y-2">
-                          <FileText className="h-8 w-8 text-gray-400" />
-                          <span className="text-sm text-gray-600">
-                            {documents.proof_of_income ? documents.proof_of_income.name : 'Upload salary slip, bank statement, etc.'}
-                          </span>
-                        </Label>
-                      </div>
-                    </div>
-
                     {formData.is_business_customer && (
                       <div>
                         <Label htmlFor="business_license">Business License</Label>
@@ -1021,10 +952,7 @@ export default function RegisterPage() {
                           <div><span className="font-medium">Phone:</span> {formData.phone}</div>
                           <div><span className="font-medium">Date of Birth:</span> {formData.date_of_birth}</div>
                           <div><span className="font-medium">National ID:</span> {formData.national_id}</div>
-                          <div><span className="font-medium">Occupation:</span> {formData.occupation}</div>
-                        </div>
-                        <div className="text-sm">
-                          <span className="font-medium">Address:</span> {formData.address}
+                          <div><span className="font-medium">Address:</span> {formData.address}</div>
                         </div>
                       </div>
                     </div>
@@ -1071,12 +999,6 @@ export default function RegisterPage() {
                             <span>Profile Photo:</span>
                             <span className={documents.profile_photo ? "text-green-600" : "text-gray-500"}>
                               {documents.profile_photo ? "✓ Uploaded" : "○ Optional"}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Proof of Income:</span>
-                            <span className={documents.proof_of_income ? "text-green-600" : "text-gray-500"}>
-                              {documents.proof_of_income ? "✓ Uploaded" : "○ Optional"}
                             </span>
                           </div>
                         </div>

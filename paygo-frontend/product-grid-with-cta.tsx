@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Phone, Mail, MapPin, Clock, Send, Search, Filter, Loader2, Scale } from "lucide-react"
-import { productApi, type Product, type ProductCategory, type ProductFilters, convertLaravelProduct } from "@/lib/api"
+import { productApi, type Product, type ProductCategory, type ProductFilters, convertLaravelProduct, formatKshPrice } from "@/lib/api"
 import { useComparison } from "@/lib/comparison"
 import { useToast } from "@/hooks/use-toast"
 
@@ -280,8 +280,8 @@ export default function ProductGridWithCTA() {
                       <SelectContent>
                         <SelectItem value="name-asc">Name (A-Z)</SelectItem>
                         <SelectItem value="name-desc">Name (Z-A)</SelectItem>
-                        <SelectItem value="price_usd-asc">Price (Low to High)</SelectItem>
-                        <SelectItem value="price_usd-desc">Price (High to Low)</SelectItem>
+                                                  <SelectItem value="price_ksh-asc">Price (Low to High)</SelectItem>
+                          <SelectItem value="price_ksh-desc">Price (High to Low)</SelectItem>
                         <SelectItem value="capacity_litres-asc">Capacity (Small to Large)</SelectItem>
                         <SelectItem value="capacity_litres-desc">Capacity (Large to Small)</SelectItem>
                       </SelectContent>
@@ -290,7 +290,7 @@ export default function ProductGridWithCTA() {
 
                   {/* Price Range */}
                   <div>
-                    <Label>Price Range: ${priceRange[0]} - ${priceRange[1]}</Label>
+                    <Label>Price Range: {formatKshPrice(priceRange[0])} - {formatKshPrice(priceRange[1])}</Label>
                     <Slider
                       value={priceRange}
                       onValueChange={(value) => setPriceRange(value as [number, number])}
@@ -353,8 +353,8 @@ export default function ProductGridWithCTA() {
                         <div>
                           <h3 className="text-2xl font-bold mb-3 text-white">{product.name}</h3>
                           {product.description_text && <p className="text-sm mb-4 text-white">{product.description_text}</p>}
-                          <p className="text-xl font-semibold mb-1 text-white">Price: ${product.price_usd} USD</p>
-                          <p className="text-lg font-medium mb-4 text-white">Starting at ${product.weekly_installment_usd}/week</p>
+                          <p className="text-xl font-semibold mb-1 text-white">Price: {formatKshPrice(product.price_ksh)}</p>
+                          <p className="text-lg font-medium mb-4 text-white">Starting at {formatKshPrice(product.weekly_installment_ksh)}/week</p>
                           <div className="space-y-1 text-sm mb-4 text-white">
                             <p>💳 PayGo: {frontendProduct.paygoWarranty} warranty</p>
                             <p>💰 Cash: {frontendProduct.cashWarranty} warranty</p>

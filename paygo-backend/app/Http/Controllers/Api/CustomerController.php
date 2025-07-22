@@ -128,13 +128,14 @@ class CustomerController extends Controller
     public function updateBusinessInfo(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'is_business_customer' => 'required|boolean',
-            'business_name' => 'required_if:is_business_customer,true|string|max:200',
+            'is_business_customer' => 'nullable|boolean',
+            'business_name' => 'nullable|string|max:200',
             'business_registration_number' => 'nullable|string|max:50',
-            'business_type' => 'required_if:is_business_customer,true|string|max:100',
+            'business_type' => 'nullable|string|max:100',
             'business_industry' => 'nullable|string|max:100',
-            'business_address' => 'required_if:is_business_customer,true|string',
+            'business_address' => 'nullable|string',
             'business_employees' => 'nullable|integer|min:1',
+            'kra_pin' => 'nullable|string|max:20|regex:/^[A-Z0-9]+$/',
         ]);
 
         if ($validator->fails()) {
@@ -177,7 +178,7 @@ class CustomerController extends Controller
     public function updateContacts(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'reference_contacts' => 'required|array|min:2|max:3',
+            'reference_contacts' => 'required|array|min:1|max:1',
             'reference_contacts.*.name' => 'required|string|max:100',
             'reference_contacts.*.phone' => 'required|string|max:20',
             'reference_contacts.*.relationship' => 'required|string|max:50',
@@ -233,7 +234,6 @@ class CustomerController extends Controller
             $documentTypes = [
                 'id_document_front' => 'id_document_front_path',
                 'id_document_back' => 'id_document_back_path',
-                'proof_of_income' => 'proof_of_income_path',
                 'business_license' => 'business_license_path',
                 'profile_photo' => 'profile_photo_path'
             ];

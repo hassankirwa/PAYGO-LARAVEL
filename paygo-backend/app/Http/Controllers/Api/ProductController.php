@@ -36,11 +36,11 @@ class ProductController extends Controller
 
         // Price range filter
         if ($request->has('min_price') && !empty($request->min_price)) {
-            $query->where('price_usd', '>=', $request->min_price);
+            $query->where('price_ksh', '>=', $request->min_price);
         }
         
         if ($request->has('max_price') && !empty($request->max_price)) {
-            $query->where('price_usd', '<=', $request->max_price);
+            $query->where('price_ksh', '<=', $request->max_price);
         }
 
         // Capacity filter
@@ -64,7 +64,7 @@ class ProductController extends Controller
         $sortBy = $request->get('sort_by', 'name');
         $sortOrder = $request->get('sort_order', 'asc');
         
-        $allowedSortFields = ['name', 'price_usd', 'capacity_litres', 'weekly_installment_usd', 'created_at'];
+        $allowedSortFields = ['name', 'price_ksh', 'capacity_litres', 'weekly_installment_ksh', 'created_at'];
         if (in_array($sortBy, $allowedSortFields)) {
             $query->orderBy($sortBy, $sortOrder);
         }
@@ -80,8 +80,8 @@ class ProductController extends Controller
             'filters' => [
                 'categories' => ProductCategory::where('is_active', true)->get(),
                 'price_range' => [
-                    'min' => Product::where('is_active', true)->min('price_usd'),
-                    'max' => Product::where('is_active', true)->max('price_usd'),
+                    'min' => Product::where('is_active', true)->min('price_ksh'),
+                    'max' => Product::where('is_active', true)->max('price_ksh'),
                 ],
                 'capacity_range' => [
                     'min' => Product::where('is_active', true)->min('capacity_litres'),
@@ -100,8 +100,8 @@ class ProductController extends Controller
         $validated = $request->validated();
         
         // Calculate monthly installment if not provided
-        if (!isset($validated['monthly_installment_usd']) && isset($validated['weekly_installment_usd'])) {
-            $validated['monthly_installment_usd'] = round($validated['weekly_installment_usd'] * 4.33, 2);
+        if (!isset($validated['monthly_installment_ksh']) && isset($validated['weekly_installment_ksh'])) {
+            $validated['monthly_installment_ksh'] = round($validated['weekly_installment_ksh'] * 4.33, 2);
         }
 
         $product = Product::create($validated);
@@ -136,8 +136,8 @@ class ProductController extends Controller
         $validated = $request->validated();
         
         // Calculate monthly installment if not provided
-        if (!isset($validated['monthly_installment_usd']) && isset($validated['weekly_installment_usd'])) {
-            $validated['monthly_installment_usd'] = round($validated['weekly_installment_usd'] * 4.33, 2);
+        if (!isset($validated['monthly_installment_ksh']) && isset($validated['weekly_installment_ksh'])) {
+            $validated['monthly_installment_ksh'] = round($validated['weekly_installment_ksh'] * 4.33, 2);
         }
 
         $product->update($validated);

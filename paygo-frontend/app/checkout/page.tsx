@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { MpesaStkPushModal } from "@/components/mpesa-stk-push-modal"
+import { formatKshPrice } from "@/lib/api"
 
 interface PaymentPlan {
   id: string
@@ -66,17 +67,18 @@ export default function CheckoutPage() {
     if (planId) {
       // Simulate API call to get plan details
       setTimeout(() => {
+        // Using realistic KES amounts
         setPlan({
           id: planId,
           productId: 1,
           productName: "KOYO BC-50DC FRIDGE, SINGLE DOOR WITH FREEZER CHAMBER",
-          productPrice: 805.00,
+          productPrice: 112700, // KSh 112,700 (converted from $805)
           frequency: "monthly",
-          installmentAmount: 60.38,
-          downPayment: 80.50,
+          installmentAmount: 8453, // KSh 8,453 (converted from $60.38)
+          downPayment: 11270, // KSh 11,270 (converted from $80.50)
           planDuration: "1 year",
           totalInstallments: 12,
-          totalCost: 805.00
+          totalCost: 112700 // KSh 112,700
         })
         setLoading(false)
       }, 1000)
@@ -117,13 +119,10 @@ export default function CheckoutPage() {
     }, 2000)
   }
 
-  // Handle M-Pesa modal close and simulate payment success for demo
+  // Handle M-Pesa modal close - only close modal, don't simulate success
   const handleMpesaClose = () => {
     setShowMpesaModal(false)
-    // For demo purposes, simulate successful payment after modal closes
-    setTimeout(() => {
-      setPaymentSuccess(true)
-    }, 1000)
+    // Real success will be handled by the M-Pesa modal component via callback
   }
 
   const getPaymentAmount = () => {
@@ -203,7 +202,7 @@ export default function CheckoutPage() {
           </CardHeader>
           <CardContent className="text-center space-y-4">
             <p className="text-gray-600">
-              Your {paymentMethod === 'cash' ? 'full' : 'down'} payment of <strong>${getPaymentAmount()}</strong> has been processed successfully.
+              Your {paymentMethod === 'cash' ? 'full' : 'down'} payment of <strong>{formatKshPrice(getPaymentAmount() || 0)}</strong> has been processed successfully.
             </p>
             <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
               <h4 className="font-semibold text-emerald-800 mb-2">What happens next?</h4>
@@ -212,7 +211,7 @@ export default function CheckoutPage() {
                 <li>• Our technician will install and activate your device</li>
                 {paymentMethod !== 'cash' && (
                   <>
-                    <li>• Your first monthly payment of ${plan.installmentAmount} is due on {new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString()}</li>
+                    <li>• Your first monthly payment of {formatKshPrice(plan.installmentAmount)} is due on {new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString()}</li>
                     <li>• You'll receive SMS reminders before each payment</li>
                   </>
                 )}
@@ -402,7 +401,7 @@ export default function CheckoutPage() {
                           <li>Go to M-Pesa menu on your phone</li>
                           <li>Select "Lipa na M-Pesa" → "Buy Goods and Services"</li>
                           <li>Enter Till Number: <strong>{tillNumber}</strong></li>
-                          <li>Enter Amount: <strong>KSh {(getPaymentAmount() || 0) * 135}</strong></li>
+                          <li>Enter Amount: <strong>{formatKshPrice(getPaymentAmount() || 0)}</strong></li>
                           <li>Enter your M-Pesa PIN to complete</li>
                         </ol>
                       </div>
@@ -484,10 +483,10 @@ export default function CheckoutPage() {
                         {paymentMethod === 'card' && <CreditCard className="h-4 w-4 mr-2" />}
                         {paymentMethod === 'cash' && <Building2 className="h-4 w-4 mr-2" />}
                         
-                        {paymentMethod === 'stk-push' && `Pay via STK Push ($${getPaymentAmount()})`}
-                        {paymentMethod === 'till-number' && `I've Paid via Till Number ($${getPaymentAmount()})`}
-                        {paymentMethod === 'card' && `Pay with Card ($${getPaymentAmount()})`}
-                        {paymentMethod === 'cash' && `Pay Full Amount ($${plan.productPrice})`}
+                        {paymentMethod === 'stk-push' && `Pay via STK Push (${formatKshPrice(getPaymentAmount() || 0)})`}
+                        {paymentMethod === 'till-number' && `I've Paid via Till Number (${formatKshPrice(getPaymentAmount() || 0)})`}
+                        {paymentMethod === 'card' && `Pay with Card (${formatKshPrice(getPaymentAmount() || 0)})`}
+                        {paymentMethod === 'cash' && `Pay Full Amount (${formatKshPrice(plan.productPrice)})`}
                       </>
                     )}
                   </Button>
@@ -522,7 +521,7 @@ export default function CheckoutPage() {
                   <div className="space-y-3">
                     <div className="flex justify-between font-semibold text-lg">
                       <span>Full Payment:</span>
-                      <span>${plan.productPrice}</span>
+                      <span>{formatKshPrice(plan.productPrice)}</span>
                     </div>
                     <div className="text-xs text-gray-500">
                       12-month standard warranty
@@ -532,15 +531,15 @@ export default function CheckoutPage() {
                   <div className="space-y-3">
                     <div className="flex justify-between">
                       <span>Product Price:</span>
-                      <span>${plan.productPrice}</span>
+                      <span>{formatKshPrice(plan.productPrice)}</span>
                     </div>
                     <div className="flex justify-between text-emerald-600">
                       <span>Down Payment:</span>
-                      <span className="font-semibold">${plan.downPayment}</span>
+                      <span className="font-semibold">{formatKshPrice(plan.downPayment)}</span>
                     </div>
                     <div className="flex justify-between text-sm text-gray-600">
                       <span>Remaining Amount:</span>
-                      <span>${(plan.productPrice - plan.downPayment).toFixed(2)}</span>
+                      <span>{formatKshPrice(plan.productPrice - plan.downPayment)}</span>
                     </div>
                     
                     <Separator />
@@ -552,7 +551,7 @@ export default function CheckoutPage() {
                       </div>
                       <div className="flex justify-between">
                         <span>Installment Amount:</span>
-                        <span>${plan.installmentAmount}</span>
+                        <span>{formatKshPrice(plan.installmentAmount)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Plan Duration:</span>
@@ -568,7 +567,7 @@ export default function CheckoutPage() {
 
                     <div className="flex justify-between font-semibold">
                       <span>Total Cost:</span>
-                      <span>${plan.totalCost}</span>
+                      <span>{formatKshPrice(plan.totalCost)}</span>
                     </div>
 
                     <div className="text-xs text-gray-500">
@@ -609,6 +608,14 @@ export default function CheckoutPage() {
           productName={plan.productName}
           paymentAmount={plan.downPayment}
           paymentType="Down Payment"
+          quoteId={plan.id}
+          productId={plan.productId}
+          productPrice={plan.productPrice}
+          planType={plan.frequency}
+          downPaymentAmount={plan.downPayment}
+          installmentAmount={plan.installmentAmount}
+          totalInstallments={plan.totalInstallments}
+          planDuration={plan.planDuration}
         />
       )}
     </div>

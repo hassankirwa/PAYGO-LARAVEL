@@ -1,5 +1,14 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
+// Currency utility functions for KSh (no conversion needed)
+export const formatKshPrice = (kshAmount: number): string => {
+  return `KSh ${Math.round(kshAmount).toLocaleString()}`;
+};
+
+export const formatKshPriceWithDecimals = (kshAmount: number): string => {
+  return `KSh ${kshAmount.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
 // API client configuration
 const apiClient = {
   get: async (endpoint: string, params?: Record<string, any>) => {
@@ -54,23 +63,23 @@ export interface ProductCategory {
   created_at: string;
 }
 
-// Laravel API Product interface (raw from backend)
-export interface LaravelProduct {
+// Laravel Product interface (from API response)
+interface LaravelProduct {
   id: number;
   category_id: number;
   name: string;
   model_code: string;
-  description_text: string;
-  long_description: string;
-  capacity_litres: number;
-  power_consumption_watts: number;
-  color: string;
+  description_text?: string;
+  long_description?: string;
+  capacity_litres?: number;
+  power_consumption_watts?: number;
+  color?: string;
   defrost_type: 'Manual' | 'Automatic';
   cash_warranty_months: number;
   paygo_warranty_months: number;
-  price_usd: string | number;
-  weekly_installment_usd: string | number;
-  monthly_installment_usd: string | number;
+  price_ksh: string | number; // Changed from price_usd
+  weekly_installment_ksh: string | number; // Changed from weekly_installment_usd
+  monthly_installment_ksh: string | number; // Changed from monthly_installment_usd
   features: string | string[];
   images: string | string[];
   is_active: boolean;
@@ -82,24 +91,26 @@ export interface LaravelProduct {
 // Frontend Product interface (after conversion)
 export interface Product {
   id: number;
+  category_id: number;
   name: string;
-  description: string;
-  image_url: string;
-  category: string;
-  categoryId: number;
-  categoryObject?: ProductCategory;
-  capacity?: string;
-  powerConsumption?: string;
-  color: string;
-  defrostType: 'Manual' | 'Automatic';
-  price: number;
-  weeklyInstallment: number;
-  monthlyInstallment: number;
-  features: string[];
-  images: string[];
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  model_code: string;
+  description_text?: string;
+  long_description?: string;
+  capacity_litres?: number;
+  power_consumption_watts?: number;
+  color?: string;
+  defrost_type: 'Manual' | 'Automatic';
+  cash_warranty_months: number;
+  paygo_warranty_months: number;
+  price_ksh: number; // Changed from price_usd
+  weekly_installment_ksh: number; // Changed from weekly_installment_usd
+  monthly_installment_ksh?: number; // Changed from monthly_installment_usd
+  features?: string[];
+  images?: string[];
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  category?: ProductCategory;
 }
 
 export interface ProductFilters {
@@ -110,7 +121,7 @@ export interface ProductFilters {
   min_capacity?: number;
   max_capacity?: number;
   color?: string;
-  sort_by?: 'name' | 'price_usd' | 'capacity_litres' | 'weekly_installment_usd' | 'created_at';
+  sort_by?: 'name' | 'price_ksh' | 'capacity_litres' | 'weekly_installment_ksh' | 'created_at';
   sort_order?: 'asc' | 'desc';
   per_page?: number;
   page?: number;
@@ -227,7 +238,7 @@ export const formatWarranty = (months: number): string => {
   }
 };
 
-// Convert Laravel product to frontend product format for backward compatibility
+// Convert Laravel product format to frontend format
 export const convertLaravelProduct = (laravelProduct: LaravelProduct): Product => {
   // Ensure features is always an array
   const ensureArray = (value: any): string[] => {
@@ -260,23 +271,25 @@ export const convertLaravelProduct = (laravelProduct: LaravelProduct): Product =
   return {
     id: laravelProduct.id,
     name: laravelProduct.name,
-    description: laravelProduct.description_text,
-    image_url: ensureImageArray(laravelProduct.images)[0] || '/placeholder.svg?height=400&width=600',
-    category: laravelProduct.category?.name || 'Unknown',
-    categoryId: laravelProduct.category_id,
-    categoryObject: laravelProduct.category,
-    capacity: laravelProduct.capacity_litres ? `${laravelProduct.capacity_litres}L` : undefined,
-    powerConsumption: laravelProduct.power_consumption_watts ? `${laravelProduct.power_consumption_watts}W` : undefined,
+    description_text: laravelProduct.description_text,
+    long_description: laravelProduct.long_description,
+    category_id: laravelProduct.category_id,
+    category: laravelProduct.category,
+    model_code: laravelProduct.model_code,
+    capacity_litres: laravelProduct.capacity_litres,
+    power_consumption_watts: laravelProduct.power_consumption_watts,
     color: laravelProduct.color,
-    defrostType: laravelProduct.defrost_type,
-    price: Number(laravelProduct.price_usd),
-    weeklyInstallment: Number(laravelProduct.weekly_installment_usd),
-    monthlyInstallment: Number(laravelProduct.monthly_installment_usd),
+    defrost_type: laravelProduct.defrost_type,
+    cash_warranty_months: laravelProduct.cash_warranty_months,
+    paygo_warranty_months: laravelProduct.paygo_warranty_months,
+    price_ksh: Number(laravelProduct.price_ksh),
+    weekly_installment_ksh: Number(laravelProduct.weekly_installment_ksh),
+    monthly_installment_ksh: Number(laravelProduct.monthly_installment_ksh || 0),
     features: ensureArray(laravelProduct.features),
     images: ensureImageArray(laravelProduct.images),
-    isActive: laravelProduct.is_active,
-    createdAt: laravelProduct.created_at,
-    updatedAt: laravelProduct.updated_at,
+    is_active: laravelProduct.is_active,
+    created_at: laravelProduct.created_at,
+    updated_at: laravelProduct.updated_at,
   };
 };
 
@@ -315,7 +328,7 @@ export interface PayGoPlanResponse {
       id: number;
       name: string;
       model_code: string;
-      price_usd: string;
+      price_ksh: string;
     };
     available_plans: PayGoPlan[];
     plan_summary: {
@@ -340,7 +353,7 @@ export interface CustomPlanResponse {
     product: {
       id: number;
       name: string;
-      price_usd: string;
+      price_ksh: string;
     };
     custom_plan: PayGoPlan;
   };
@@ -352,7 +365,7 @@ export interface PlanComparison {
     product: {
       id: number;
       name: string;
-      price_usd: string;
+      price_ksh: string;
     };
     comparison: {
       lowest_installment: PayGoPlan;
@@ -375,7 +388,7 @@ export interface BudgetRecommendations {
     product: {
       id: number;
       name: string;
-      price_usd: string;
+      price_ksh: string;
     };
     budget_constraints: {
       max_installment: number;

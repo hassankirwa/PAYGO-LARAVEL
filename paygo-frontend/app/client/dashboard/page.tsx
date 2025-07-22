@@ -83,32 +83,46 @@ export default function ClientDashboard() {
 
   useEffect(() => {
     const checkAuth = async () => {
+      console.log('🔍 Client Dashboard: Starting auth check...')
+      
       try {
         // Check if user is authenticated
-        if (!authService.isAuthenticated()) {
+        const isAuth = authService.isAuthenticated()
+        console.log('🔐 Is authenticated:', isAuth)
+        
+        if (!isAuth) {
+          console.log('❌ Not authenticated, redirecting to login...')
           router.push("/login")
           return
         }
 
         // Check if user type is client
         const userType = authService.getUserType()
+        console.log('👤 User type:', userType)
+        
         if (userType !== "client") {
+          console.log('❌ Wrong user type, redirecting to login...')
           router.push("/login")
           return
         }
 
         // Get current user data
+        console.log('📡 Fetching current user data...')
         const currentUser = await authService.getCurrentUser()
+        
         if (!currentUser) {
+          console.log('❌ No current user, redirecting to login...')
           router.push("/login")
           return
         }
 
+        console.log('✅ User authenticated successfully:', currentUser)
         setUser(currentUser)
       } catch (error) {
-        console.error("Authentication error:", error)
+        console.error("❌ Authentication error:", error)
         router.push("/login")
       } finally {
+        console.log('🏁 Auth check complete, setting loading to false')
         setIsLoading(false)
       }
     }

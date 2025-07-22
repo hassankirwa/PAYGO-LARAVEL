@@ -37,14 +37,6 @@ class DocumentUploadRequest extends FormRequest
                 'dimensions:min_width=500,min_height=500,max_width=4000,max_height=4000'
             ],
             
-            // Proof of Income Document
-            'proof_of_income' => [
-                'nullable',
-                'file',
-                'mimes:jpeg,jpg,png,pdf,doc,docx',
-                'max:10240', // 10MB max for documents
-            ],
-            
             // Business License (for business customers)
             'business_license' => [
                 'nullable',
@@ -87,10 +79,6 @@ class DocumentUploadRequest extends FormRequest
             'id_document_back.max' => 'ID document back must not exceed 5MB.',
             'id_document_back.dimensions' => 'ID document back must be at least 500x500 pixels and no larger than 4000x4000 pixels.',
             
-            // Proof of Income validation messages
-            'proof_of_income.mimes' => 'Proof of income must be a JPEG, PNG, PDF, DOC, or DOCX file.',
-            'proof_of_income.max' => 'Proof of income file must not exceed 10MB.',
-            
             // Business License validation messages
             'business_license.mimes' => 'Business license must be a JPEG, PNG, or PDF file.',
             'business_license.max' => 'Business license must not exceed 5MB.',
@@ -122,7 +110,7 @@ class DocumentUploadRequest extends FormRequest
      */
     protected function validateFileContent($validator)
     {
-        $fileFields = ['id_document_front', 'id_document_back', 'proof_of_income', 'business_license', 'profile_photo'];
+        $fileFields = ['id_document_front', 'id_document_back', 'business_license', 'profile_photo'];
         
         foreach ($fileFields as $field) {
             if ($this->hasFile($field)) {
@@ -239,7 +227,6 @@ class DocumentUploadRequest extends FormRequest
         return [
             'id_document_front' => 'ID document (front)',
             'id_document_back' => 'ID document (back)',
-            'proof_of_income' => 'proof of income document',
             'business_license' => 'business license',
             'profile_photo' => 'profile photo',
             'document_type' => 'document type',

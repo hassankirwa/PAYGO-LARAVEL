@@ -82,7 +82,7 @@ class PayGoPlanRequest extends FormRequest
     {
         $product = $this->route('product');
         $downPayment = $this->down_payment;
-        $productPrice = $product->price_usd;
+        $productPrice = $product->price_ksh;
 
         $minDownPayment = $productPrice * PayGoPlanCalculator::MIN_DOWN_PAYMENT_PERCENTAGE;
         $maxDownPayment = $productPrice * PayGoPlanCalculator::MAX_DOWN_PAYMENT_PERCENTAGE;
@@ -90,14 +90,14 @@ class PayGoPlanRequest extends FormRequest
         if ($downPayment < $minDownPayment) {
             $validator->errors()->add(
                 'down_payment',
-                "Down payment must be at least $" . number_format($minDownPayment, 2) . " (" . (PayGoPlanCalculator::MIN_DOWN_PAYMENT_PERCENTAGE * 100) . "% of product price)."
+                "Down payment must be at least KSh " . number_format($minDownPayment, 2) . " (" . (PayGoPlanCalculator::MIN_DOWN_PAYMENT_PERCENTAGE * 100) . "% of product price)."
             );
         }
 
         if ($downPayment > $maxDownPayment) {
             $validator->errors()->add(
                 'down_payment',
-                "Down payment cannot exceed $" . number_format($maxDownPayment, 2) . " (" . (PayGoPlanCalculator::MAX_DOWN_PAYMENT_PERCENTAGE * 100) . "% of product price)."
+                "Down payment cannot exceed KSh " . number_format($maxDownPayment, 2) . " (" . (PayGoPlanCalculator::MAX_DOWN_PAYMENT_PERCENTAGE * 100) . "% of product price)."
             );
         }
 

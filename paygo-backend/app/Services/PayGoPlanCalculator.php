@@ -19,7 +19,7 @@ class PayGoPlanCalculator
      */
     public function calculatePlansForProduct(Product $product, array $options = [])
     {
-        $basePrice = $product->price_usd;
+        $basePrice = $product->price_ksh;
         $plans = [];
 
         foreach (self::AVAILABLE_DURATIONS as $duration) {
@@ -155,7 +155,7 @@ class PayGoPlanCalculator
      */
     public function calculateCustomPlan(Product $product, array $customOptions)
     {
-        $basePrice = $product->price_usd;
+        $basePrice = $product->price_ksh;
         
         return $this->calculatePlan([
             'product_id' => $product->id,

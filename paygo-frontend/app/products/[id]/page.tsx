@@ -28,7 +28,7 @@ import {
 } from "lucide-react"
 import Image from "next/image"
 import Link from "next/link"
-import { productApi, type Product } from "@/lib/api"
+import { productApi, type Product, formatKshPrice } from "@/lib/api"
 import { AvailabilityModal } from "@/components/availability-modal"
 
 interface ProductPageProps {
@@ -131,10 +131,10 @@ export default function ProductPage({ params }: ProductPageProps) {
             <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
               <div className="flex-1">
                 <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 mb-3">
-                  {product.category}
+                  {product.category?.name || 'Product'}
                 </Badge>
                 <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">{product.name}</h1>
-                <p className="text-lg text-gray-600 mb-4">{product.description}</p>
+                <p className="text-lg text-gray-600 mb-4">{product.description_text}</p>
                 
                 {/* Features badges */}
                 <div className="flex flex-wrap gap-2 mb-6">
@@ -214,10 +214,10 @@ export default function ProductPage({ params }: ProductPageProps) {
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {product.capacity && (
+                        {product.capacity_litres && (
                           <div className="flex justify-between py-2 border-b">
                             <span className="font-medium">Capacity</span>
-                            <span className="text-emerald-600">{product.capacity}</span>
+                            <span className="text-emerald-600">{product.capacity_litres}L</span>
                           </div>
                         )}
                         {product.color && (
@@ -226,10 +226,10 @@ export default function ProductPage({ params }: ProductPageProps) {
                             <span className="text-emerald-600">{product.color}</span>
                           </div>
                         )}
-                        {product.price && (
+                        {product.price_ksh && (
                           <div className="flex justify-between py-2 border-b">
-                            <span className="font-medium">Price (USD)</span>
-                            <span className="text-emerald-600">${product.price}</span>
+                            <span className="font-medium">Price (KSh)</span>
+                            <span className="text-emerald-600">{formatKshPrice(product.price_ksh)}</span>
                           </div>
                         )}
                         <div className="flex justify-between py-2 border-b">
@@ -322,7 +322,7 @@ export default function ProductPage({ params }: ProductPageProps) {
                 </CardHeader>
                 <CardContent className="p-6">
                   <div className="text-center mb-6">
-                    <p className="text-4xl font-bold text-emerald-700 mb-2">${product.price}</p>
+                    <p className="text-4xl font-bold text-emerald-700 mb-2">{formatKshPrice(product.price_ksh)}</p>
                     <p className="text-lg text-gray-600">One-time payment</p>
                   </div>
 

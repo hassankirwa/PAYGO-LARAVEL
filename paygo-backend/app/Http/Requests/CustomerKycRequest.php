@@ -40,10 +40,13 @@ class CustomerKycRequest extends FormRequest
             'address' => 'nullable|string|max:500',
             'latitude' => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
-            'occupation' => 'nullable|string|max:100',
-            'monthly_income' => 'nullable|numeric|min:0|max:10000000',
-            'income_source' => 'nullable|in:salary,business,farming,other',
-            'income_verification_notes' => 'nullable|string|max:1000',
+            
+            // Business Information (Story 3.3) - All fields optional
+            'is_business_customer' => 'nullable|boolean',
+            'business_name' => 'nullable|string|max:200',
+            'business_type' => 'nullable|string|max:100',
+            'business_registration_number' => 'nullable|string|max:50',
+            'kra_pin' => 'nullable|string|max:20|regex:/^[A-Z0-9]+$/',
             
             // Optional GPS coordinates
             'address_latitude' => 'nullable|numeric|between:-90,90',
@@ -62,9 +65,7 @@ class CustomerKycRequest extends FormRequest
             'national_id.regex' => 'National ID must contain only numbers.',
             'national_id.unique' => 'This National ID is already registered.',
             'passport_number.unique' => 'This passport number is already registered.',
-            'monthly_income.min' => 'Monthly income cannot be negative.',
-            'monthly_income.max' => 'Monthly income seems too high. Please verify.',
-            'income_source.in' => 'Income source must be one of: salary, business, farming, or other.',
+            'kra_pin.regex' => 'KRA PIN must contain only letters and numbers.',
             'latitude.between' => 'Latitude must be between -90 and 90 degrees.',
             'longitude.between' => 'Longitude must be between -180 and 180 degrees.',
         ];
@@ -78,7 +79,6 @@ class CustomerKycRequest extends FormRequest
         $validator->after(function ($validator) {
             // Custom validation logic
             $this->validateAge($validator);
-            $this->validateIncomeConsistency($validator);
             $this->validateIdentificationDocuments($validator);
         });
     }
@@ -104,47 +104,6 @@ class CustomerKycRequest extends FormRequest
                 $validator->errors()->add(
                     'date_of_birth',
                     'Please verify your date of birth.'
-                );
-            }
-        }
-    }
-
-    /**
-     * Validate income consistency
-     */
-    protected function validateIncomeConsistency($validator)
-    {
-        $income = $this->input('monthly_income');
-        $incomeSource = $this->input('income_source');
-        
-        if ($income && !$incomeSource) {
-            $validator->errors()->add(
-                'income_source',
-                'Please specify your source of income.'
-            );
-        }
-        
-        if ($incomeSource && !$income) {
-            $validator->errors()->add(
-                'monthly_income',
-                'Please provide your monthly income amount.'
-            );
-        }
-        
-        // Validate income ranges based on source
-        if ($income && $incomeSource) {
-            $minIncome = match($incomeSource) {
-                'salary' => 5000, // Minimum wage considerations
-                'business' => 2000,
-                'farming' => 1000,
-                'other' => 500,
-                default => 0
-            };
-            
-            if ($income < $minIncome) {
-                $validator->errors()->add(
-                    'monthly_income',
-                    "Monthly income seems low for a {$incomeSource} income source. Please verify."
                 );
             }
         }
@@ -196,8 +155,7 @@ class CustomerKycRequest extends FormRequest
             'date_of_birth' => 'date of birth',
             'national_id' => 'National ID',
             'passport_number' => 'passport number',
-            'monthly_income' => 'monthly income',
-            'income_source' => 'income source',
+            'kra_pin' => 'KRA PIN',
             'address_latitude' => 'GPS latitude',
             'address_longitude' => 'GPS longitude',
         ];

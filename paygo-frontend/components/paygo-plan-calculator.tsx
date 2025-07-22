@@ -15,7 +15,7 @@ import {
   PayGoSettings, 
   CustomPlanRequest,
   paygoApi, 
-  formatPrice, 
+  formatKshPrice, 
   formatInstallment, 
   formatDuration,
   calculateDownPaymentRange 
@@ -48,7 +48,7 @@ export default function PayGoPlanCalculator({ product, onPlanSelect, className }
         if (settingsResponse.success) {
           setSettings(settingsResponse.data)
           // Set default down payment to minimum
-          const minDownPayment = product.price * (settingsResponse.data.down_payment_constraints.min_percentage / 100)
+          const minDownPayment = product.price_ksh * (settingsResponse.data.down_payment_constraints.min_percentage / 100)
           setDownPayment(minDownPayment)
         }
       } catch (err) {
@@ -58,17 +58,17 @@ export default function PayGoPlanCalculator({ product, onPlanSelect, className }
     }
 
     loadSettings()
-  }, [product.price])
+  }, [product.price_ksh])
 
   // Calculate down payment range
   const downPaymentRange = useMemo(() => {
     if (!settings) return { min: 0, max: 0 }
     return calculateDownPaymentRange(
-      product.price,
+      product.price_ksh,
       settings.down_payment_constraints.min_percentage,
       settings.down_payment_constraints.max_percentage
     )
-  }, [product.price, settings])
+  }, [product.price_ksh, settings])
 
   // Calculate plan when inputs change
   useEffect(() => {
@@ -130,7 +130,7 @@ export default function PayGoPlanCalculator({ product, onPlanSelect, className }
         <div className="bg-gray-50 p-4 rounded-lg">
           <div className="flex justify-between items-center">
             <span className="font-medium">Product Price</span>
-            <span className="text-xl font-bold text-green-600">{formatPrice(product.price)}</span>
+            <span className="text-xl font-bold text-green-600">{formatKshPrice(product.price_ksh)}</span>
           </div>
         </div>
 
@@ -182,10 +182,10 @@ export default function PayGoPlanCalculator({ product, onPlanSelect, className }
           <Label className="flex items-center justify-between">
             <span className="flex items-center space-x-2">
               <DollarSign className="h-4 w-4" />
-              <span>Down Payment: {formatPrice(downPayment)}</span>
+              <span>Down Payment: {formatKshPrice(downPayment)}</span>
             </span>
             <Badge variant="outline">
-              {((downPayment / product.price) * 100).toFixed(1)}%
+              {((downPayment / product.price_ksh) * 100).toFixed(1)}%
             </Badge>
           </Label>
           <div className="space-y-2">
@@ -198,8 +198,8 @@ export default function PayGoPlanCalculator({ product, onPlanSelect, className }
               className="w-full"
             />
             <div className="flex justify-between text-sm text-gray-500">
-              <span>{formatPrice(downPaymentRange.min)} (min)</span>
-              <span>{formatPrice(downPaymentRange.max)} (max)</span>
+              <span>{formatKshPrice(downPaymentRange.min)} (min)</span>
+              <span>{formatKshPrice(downPaymentRange.max)} (max)</span>
             </div>
           </div>
         </div>
@@ -231,7 +231,7 @@ export default function PayGoPlanCalculator({ product, onPlanSelect, className }
                 
                 <div className="bg-green-50 p-4 rounded-lg text-center">
                   <div className="text-2xl font-bold text-green-600">
-                    {formatPrice(calculatedPlan.total_cost)}
+                    {formatKshPrice(calculatedPlan.total_cost)}
                   </div>
                   <div className="text-sm text-green-700">Total Cost</div>
                 </div>
@@ -240,15 +240,15 @@ export default function PayGoPlanCalculator({ product, onPlanSelect, className }
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <span>Product Price</span>
-                  <span className="font-medium">{formatPrice(calculatedPlan.base_price)}</span>
+                  <span className="font-medium">{formatKshPrice(calculatedPlan.base_price)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Down Payment</span>
-                  <span className="font-medium">{formatPrice(calculatedPlan.down_payment)}</span>
+                  <span className="font-medium">{formatKshPrice(calculatedPlan.down_payment)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Financing Amount</span>
-                  <span className="font-medium">{formatPrice(calculatedPlan.financing_amount)}</span>
+                  <span className="font-medium">{formatKshPrice(calculatedPlan.financing_amount)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Total Installments</span>
@@ -276,7 +276,7 @@ export default function PayGoPlanCalculator({ product, onPlanSelect, className }
                       Payment #{payment.installment_number}
                     </span>
                     <div className="text-right">
-                      <div className="font-medium">{formatPrice(payment.amount)}</div>
+                      <div className="font-medium">{formatKshPrice(payment.amount)}</div>
                       <div className="text-xs text-gray-500">
                         Due: {new Date(payment.due_date).toLocaleDateString()}
                       </div>

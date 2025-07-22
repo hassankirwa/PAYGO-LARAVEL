@@ -11,14 +11,30 @@
 - [x] M-Pesa admin configuration management
 - [x] Dynamic environment switching (sandbox/production)
 - [x] M-Pesa connection testing functionality
+- [x] Real-time payment confirmation (callback handling implemented)
+- [x] Payment success/failure verification based on M-Pesa callback
+- [x] Comprehensive payment success UI with order details
 - [ ] Bank debit/credit card processing
-- [ ] Real-time payment confirmation (callback handling implemented)
 - [ ] Receipt generation and SMS notification
 - [ ] Payment retry mechanism for failures
 - [ ] Plan activation upon successful down payment
 
 ### Priority: High
 ### Status: 🔄 In Progress
+
+### ✅ **Recent Improvements (Payment Confirmation Enhancement)**:
+- **Backend Enhancements**:
+  - ✅ Added `processFailedPayment()` method to handle payment failures
+  - ✅ Enhanced STK callback processing for both success/failure cases
+  - ✅ Improved `getPaymentOrderStatus()` with `payment_confirmed` flag
+  - ✅ Added comprehensive transaction logging and error handling
+  
+- **Frontend Enhancements**:
+  - ✅ Removed false success logic based on STK query alone
+  - ✅ Payment success only shown when confirmed by M-Pesa callback
+  - ✅ Comprehensive success UI showing payment details and next steps
+  - ✅ Better error handling and user feedback during payment process
+  - ✅ Enhanced status polling with timeout and retry logic
 
 ### ✅ **M-Pesa Implementation Completed**:
 - **STK Push**: `/api/mpesa/stk-push` endpoint with dynamic configuration
@@ -27,6 +43,7 @@
 - **Security**: Encrypted credential storage and masked display
 - **Testing**: Built-in connection testing and verification
 - **Environment Management**: Seamless sandbox/production switching
+- **Payment Verification**: Only shows success when payment is confirmed by callback
 
 ### Integration Points:
 - **From Story 2.4**: Receives selected plan details and quote ID

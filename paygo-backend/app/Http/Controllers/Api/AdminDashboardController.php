@@ -110,12 +110,12 @@ class AdminDashboardController extends Controller
         // This month's revenue
         $thisMonthRevenue = Payment::where('status', 'completed')
             ->where('payment_date', '>=', $thisMonth)
-            ->sum('amount_usd');
+            ->sum('amount_ksh');
 
         // Last month's revenue
         $lastMonthRevenue = Payment::where('status', 'completed')
             ->whereBetween('payment_date', [$lastMonth, $lastMonthEnd])
-            ->sum('amount_usd');
+            ->sum('amount_ksh');
 
         // Calculate percentage change
         $revenueChange = 0;
@@ -126,17 +126,17 @@ class AdminDashboardController extends Controller
         }
 
         // Total revenue all time
-        $totalRevenue = Payment::where('status', 'completed')->sum('amount_usd');
+        $totalRevenue = Payment::where('status', 'completed')->sum('amount_ksh');
 
         // Average monthly revenue (last 6 months)
         $sixMonthsAgo = $now->copy()->subMonths(6);
         $avgMonthlyRevenue = Payment::where('status', 'completed')
             ->where('payment_date', '>=', $sixMonthsAgo)
-            ->sum('amount_usd') / 6;
+            ->sum('amount_ksh') / 6;
 
         // Outstanding revenue (pending payments)
         $outstandingRevenue = PaymentPlan::where('status', 'active')
-            ->sum('remaining_balance_usd');
+            ->sum('remaining_balance_ksh');
 
         return [
             'this_month_revenue' => round($thisMonthRevenue, 2),
@@ -233,7 +233,7 @@ class AdminDashboardController extends Controller
         // Average payment amount
         $avgPaymentAmount = Payment::where('status', 'completed')
             ->where('payment_date', '>=', $thisMonth)
-            ->avg('amount_usd');
+            ->avg('amount_ksh');
 
         return [
             'renewals_due_30_days' => $renewalsDue30,

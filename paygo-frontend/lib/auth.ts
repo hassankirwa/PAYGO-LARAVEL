@@ -46,6 +46,9 @@ class AuthService {
 
   async makeRequest(endpoint: string, options: RequestInit = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
+    const token = localStorage.getItem('auth_token');
+    
+    console.log('🌐 Making request:', { url, hasToken: !!token, method: options.method || 'GET' });
     
     try {
       const headers = {
@@ -60,6 +63,8 @@ class AuthService {
         ...options,
       });
 
+      console.log('📡 Response status:', response.status, response.statusText);
+
       // Try to parse JSON response
       let data;
       try {
@@ -67,17 +72,19 @@ class AuthService {
       } catch (parseError) {
         // If response is not JSON, it might be HTML error page
         const text = await response.text();
-        console.error('Non-JSON response:', text);
+        console.error('❌ Non-JSON response:', text);
         throw new Error('Server returned invalid response');
       }
 
       if (!response.ok) {
+        console.error('❌ API Error:', { status: response.status, data });
         throw new Error(data.message || data.error || 'Request failed');
       }
 
+      console.log('✅ Request successful:', data);
       return data;
     } catch (error) {
-      console.error('API Request Error:', error);
+      console.error('❌ API Request Error:', error);
       throw error;
     }
   }
@@ -107,13 +114,29 @@ class AuthService {
 
   // Client Authentication
   async clientLogin(credentials: LoginCredentials): Promise<AuthResponse> {
+    console.log('🔐 Client login attempt:', { email: credentials.email });
+    
     const response = await this.makeRequest('/client/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
     });
     
+    console.log('💾 Storing auth data:', { 
+      token: response.token ? 'present' : 'missing',
+      userType: 'client' 
+    });
+    
     localStorage.setItem('auth_token', response.token);
     localStorage.setItem('user_type', 'client');
+    
+    // Verify storage
+    const storedToken = localStorage.getItem('auth_token');
+    const storedUserType = localStorage.getItem('user_type');
+    console.log('✅ Auth data stored:', { 
+      tokenStored: !!storedToken,
+      userTypeStored: storedUserType 
+    });
+    
     return response;
   }
 
@@ -173,19 +196,33 @@ class AuthService {
 
   async getCurrentUser(): Promise<User | null> {
     const userType = localStorage.getItem('user_type') || 'user';
+    const token = localStorage.getItem('auth_token');
+    
+    console.log('🔍 getCurrentUser called:', { userType, hasToken: !!token });
+    
+    if (!token) {
+      console.log('❌ No auth token found');
+      return null;
+    }
     
     try {
       if (userType === 'client') {
+        console.log('🔍 Fetching client profile...');
         const response = await this.makeRequest('/client/profile');
-        return response.client;
+        console.log('✅ Client profile response:', response);
+        return { ...response.client, user_type: 'client' };
       } else if (userType === 'admin') {
+        console.log('🔍 Fetching admin profile...');
         const response = await this.makeRequest('/admin/profile');
-        return response.admin;
+        console.log('✅ Admin profile response:', response);
+        return { ...response.admin, user_type: 'admin' };
       } else {
         const response = await this.makeRequest('/user');
         return response;
       }
     } catch (error) {
+      console.error('❌ getCurrentUser error:', error);
+      // Clear invalid tokens
       this.logout();
       return null;
     }

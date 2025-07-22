@@ -25,34 +25,37 @@ class ClientProfileController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => [
+                'client' => [
                     'id' => $client->id,
-                    'client_id' => $client->client_id,
+                    'client_code' => $client->client_code,
                     'first_name' => $client->first_name,
                     'last_name' => $client->last_name,
                     'email' => $client->email,
                     'phone' => $client->phone,
                     'address' => $client->address,
-                    'city' => $client->city,
-                    'region' => $client->region,
-                    'country' => $client->country,
-                    'postal_code' => $client->postal_code,
-                    'id_number' => $client->id_number,
-                    'id_type' => $client->id_type,
-                    'occupation' => $client->occupation,
-                    'monthly_income_range' => $client->monthly_income_range,
-                    'business_type' => $client->business_type,
-                    'paygo_score' => $client->paygo_score,
+                    'location' => $client->location,
+                    'payment_plan' => $client->payment_plan,
                     'status' => $client->status,
+                    'payment_status' => $client->payment_status,
+                    'is_active' => $client->is_active,
                     'registration_date' => $client->registration_date,
                     'last_login' => $client->last_login,
-                    'preferences' => $client->preferences ? json_decode($client->preferences, true) : []
+                    'date_of_birth' => $client->date_of_birth,
+                    'national_id' => $client->national_id,
+                    'nationality' => $client->nationality,
+                    'kyc_status' => $client->kyc_status,
+                    'eligibility_status' => $client->eligibility_status,
+                    'is_business_customer' => $client->is_business_customer,
+                    'business_name' => $client->business_name,
+                    'business_type' => $client->business_type,
+                    'kra_pin' => $client->kra_pin,
+                    'user_type' => 'client'
                 ]
             ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'error' => 'Failed to fetch profile: ' . $e->getMessage()
+                'error' => 'Failed to retrieve profile: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -281,9 +284,9 @@ class ClientProfileController extends Controller
                 'total_plans' => $paymentPlans->count(),
                 'active_plans' => $paymentPlans->where('status', 'active')->count(),
                 'completed_plans' => $paymentPlans->where('status', 'completed')->count(),
-                'total_amount' => $paymentPlans->sum('total_amount_usd'),
-                'total_paid' => $paymentPlans->sum('total_paid_usd'),
-                'remaining_balance' => $paymentPlans->sum('remaining_balance_usd'),
+                'total_amount' => $paymentPlans->sum('total_amount_ksh'),
+                'total_paid' => $paymentPlans->sum('total_paid_ksh'),
+                'remaining_balance' => $paymentPlans->sum('remaining_balance_ksh'),
                 'next_payment_due' => $paymentPlans->where('status', 'active')
                     ->min('next_payment_due_date')
             ];
@@ -296,6 +299,157 @@ class ClientProfileController extends Controller
             return response()->json([
                 'success' => false,
                 'error' => 'Failed to fetch payment summary: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get M-Pesa transactions for the authenticated client
+     */
+    public function getMpesaTransactions(Request $request)
+    {
+        try {
+            $client = Auth::guard('sanctum')->user();
+            
+            if (!$client) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Unauthorized'
+                ], 401);
+            }
+
+            // Get query parameters for filtering
+            $status = $request->query('status'); // 'successful', 'failed', 'all'
+            $perPage = $request->query('per_page', 10);
+            $page = $request->query('page', 1);
+
+            // Base query for M-Pesa transactions related to this client
+            $query = \App\Models\MpesaTransaction::query()
+                ->join('payment_orders', 'mpesa_transactions.checkout_request_id', '=', 'payment_orders.checkout_request_id')
+                ->where('payment_orders.client_id', $client->id)
+                ->select([
+                    'mpesa_transactions.*',
+                    'payment_orders.order_reference',
+                    'payment_orders.customer_name',
+                    'payment_orders.product_name',
+                    'payment_orders.payment_type',
+                    'payment_orders.paid_amount as order_amount'
+                ])
+                ->orderBy('mpesa_transactions.created_at', 'desc');
+
+            // Apply status filter
+            if ($status === 'successful') {
+                $query->where('mpesa_transactions.result_code', 0);
+            } elseif ($status === 'failed') {
+                $query->where('mpesa_transactions.result_code', '!=', 0);
+            }
+            // 'all' or no status filter shows everything
+
+            $transactions = $query->paginate($perPage, ['*'], 'page', $page);
+
+            // Format the results
+            $formattedTransactions = $transactions->map(function ($transaction) {
+                return [
+                    'id' => $transaction->id,
+                    'order_reference' => $transaction->order_reference,
+                    'product_name' => $transaction->product_name,
+                    'payment_type' => $transaction->payment_type,
+                    'amount' => $transaction->amount ?? $transaction->order_amount,
+                    'mpesa_receipt_number' => $transaction->mpesa_receipt_number,
+                    'phone_number' => $transaction->phone_number,
+                    'result_code' => $transaction->result_code,
+                    'result_desc' => $transaction->result_desc,
+                    'transaction_date' => $transaction->transaction_date,
+                    'status' => $transaction->result_code == 0 ? 'successful' : 'failed',
+                    'status_label' => $transaction->result_code == 0 ? 'Successful' : 'Failed',
+                    'created_at' => $transaction->created_at,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formattedTransactions,
+                'pagination' => [
+                    'current_page' => $transactions->currentPage(),
+                    'last_page' => $transactions->lastPage(),
+                    'per_page' => $transactions->perPage(),
+                    'total' => $transactions->total(),
+                    'from' => $transactions->firstItem(),
+                    'to' => $transactions->lastItem(),
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to fetch M-Pesa transactions: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get payment orders for the authenticated client
+     */
+    public function getPaymentOrders(Request $request)
+    {
+        try {
+            $client = Auth::guard('sanctum')->user();
+            
+            if (!$client) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Unauthorized'
+                ], 401);
+            }
+
+            $status = $request->query('status'); // 'pending', 'completed', 'failed', 'all'
+            $perPage = $request->query('per_page', 10);
+            $page = $request->query('page', 1);
+
+            $query = \App\Models\PaymentOrder::where('client_id', $client->id)
+                ->orderBy('created_at', 'desc');
+
+            // Apply status filter
+            if ($status && $status !== 'all') {
+                $query->where('status', $status);
+            }
+
+            $orders = $query->paginate($perPage, ['*'], 'page', $page);
+
+            // Format the results
+            $formattedOrders = $orders->map(function ($order) {
+                return [
+                    'id' => $order->id,
+                    'order_reference' => $order->order_reference,
+                    'product_name' => $order->product_name,
+                    'payment_type' => $order->payment_type,
+                    'paid_amount' => $order->paid_amount,
+                    'plan_type' => $order->plan_type,
+                    'status' => $order->status,
+                    'status_label' => ucfirst($order->status),
+                    'mpesa_receipt_number' => $order->mpesa_receipt_number,
+                    'payment_completed_at' => $order->payment_completed_at,
+                    'created_at' => $order->created_at,
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $formattedOrders,
+                'pagination' => [
+                    'current_page' => $orders->currentPage(),
+                    'last_page' => $orders->lastPage(),
+                    'per_page' => $orders->perPage(),
+                    'total' => $orders->total(),
+                    'from' => $orders->firstItem(),
+                    'to' => $orders->lastItem(),
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to fetch payment orders: ' . $e->getMessage()
             ], 500);
         }
     }

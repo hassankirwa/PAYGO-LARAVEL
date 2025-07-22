@@ -14,19 +14,19 @@ class Payment extends Model
     protected $fillable = [
         'payment_plan_id',
         'client_id',
-        'amount_usd',
+        'amount_ksh',
         'payment_date',
         'payment_method',
         'payment_reference',
         'status',
-        'late_fee_usd',
+        'late_fee_ksh',
         'notes',
         'processed_by'
     ];
 
     protected $casts = [
-        'amount_usd' => 'decimal:2',
-        'late_fee_usd' => 'decimal:2',
+        'amount_ksh' => 'decimal:2',
+        'late_fee_ksh' => 'decimal:2',
         'payment_date' => 'datetime',
         'processed_by' => 'integer'
     ];
@@ -65,6 +65,16 @@ class Payment extends Model
 
     public function getTotalAmountAttribute()
     {
-        return $this->amount_usd + $this->late_fee_usd;
+        return $this->amount_ksh + $this->late_fee_ksh;
+    }
+
+    public function getFormattedAmountAttribute()
+    {
+        return 'KSh ' . number_format($this->amount_ksh, 0);
+    }
+
+    public function getFormattedTotalAmountAttribute()
+    {
+        return 'KSh ' . number_format($this->getTotalAmountAttribute(), 0);
     }
 } 

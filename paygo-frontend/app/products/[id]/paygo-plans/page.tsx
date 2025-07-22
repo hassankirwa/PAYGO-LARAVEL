@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft, Calculator, CreditCard, Calendar } from 'lucide-react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Product, productApi, formatPrice, formatInstallment } from '@/lib/api'
+import { Product, productApi, formatPrice, formatInstallment, formatKshPrice } from '@/lib/api'
 import PayGoPlanCalculator from '@/components/paygo-plan-calculator'
 
 export default function PayGoPlansPage() {
@@ -90,37 +90,32 @@ export default function PayGoPlansPage() {
 
               {/* Product Info */}
               <div className="flex-1">
-                <div className="mb-4">
-                  <Badge variant="secondary" className="mb-2">
-                    {product.category}
-                  </Badge>
-                  <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                    {product.name}
-                  </h1>
-                  <p className="text-gray-600 mb-4">
-                    {product.description}
-                  </p>
+                <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 mb-3">
+                  {product.category?.name || 'Product'}
+                </Badge>
+                <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">{product.name}</h1>
+                {product.description_text && (
+                  <p className="text-lg text-gray-600 mb-6">{product.description_text}</p>
+                )}
+                
+                <div className="bg-emerald-50 rounded-lg p-4 mb-6">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-2xl font-bold text-emerald-700">{formatKshPrice(product.price_ksh)}</span>
+                    <span className="text-gray-600">Full Price</span>
+                  </div>
                 </div>
 
                 <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-lg font-medium">Cash Price</span>
-                    <span className="text-2xl font-bold text-green-600">
-                      {formatPrice(product.price)}
-                    </span>
-                  </div>
-                  
-                  {product.capacity && (
+                  {product.capacity_litres && (
                     <div className="flex justify-between">
-                      <span>Capacity</span>
-                      <span className="font-medium">{product.capacity}</span>
+                      <span className="text-gray-600">Capacity</span>
+                      <span className="font-medium">{product.capacity_litres}L</span>
                     </div>
                   )}
-                  
-                  {product.powerConsumption && (
+                  {product.power_consumption_watts && (
                     <div className="flex justify-between">
-                      <span>Power Consumption</span>
-                      <span className="font-medium">{product.powerConsumption}</span>
+                      <span className="text-gray-600">Power</span>
+                      <span className="font-medium">{product.power_consumption_watts}W</span>
                     </div>
                   )}
                   
@@ -166,7 +161,7 @@ export default function PayGoPlansPage() {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-lg font-bold text-blue-600">
-                        {formatInstallment(product.monthlyInstallment, 'monthly')}
+                        {formatKshPrice(product.monthly_installment_ksh || 0)}/month
                       </span>
                       <span className="text-sm text-gray-500">12 payments</span>
                     </div>
@@ -182,7 +177,7 @@ export default function PayGoPlansPage() {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-lg font-bold text-green-600">
-                        {formatInstallment(product.weeklyInstallment, 'weekly')}
+                        {formatKshPrice(product.weekly_installment_ksh)}/week
                       </span>
                       <span className="text-sm text-gray-500">~26 payments</span>
                     </div>
@@ -198,7 +193,7 @@ export default function PayGoPlansPage() {
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-lg font-bold text-purple-600">
-                        {formatInstallment(product.monthlyInstallment * 3, 'quarterly')}
+                        {formatKshPrice((product.monthly_installment_ksh || 0) * 3)}/quarter
                       </span>
                       <span className="text-sm text-gray-500">8 payments</span>
                     </div>

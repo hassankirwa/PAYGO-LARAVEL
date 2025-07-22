@@ -94,6 +94,27 @@ Route::get('/health', function () {
     ]);
 });
 
+// Get API configuration including base URL
+Route::get('/config', function () {
+    $baseUrl = url('/api');
+    
+    // Check if there's a custom API base URL in system settings
+    $customBaseUrl = \App\Models\SystemSetting::where('category', 'api')
+                    ->where('key', 'base_url')
+                    ->where('is_active', true)
+                    ->value('value');
+    
+    if ($customBaseUrl) {
+        $baseUrl = rtrim($customBaseUrl, '/') . '/api';
+    }
+    
+    return response()->json([
+        'api_base_url' => $baseUrl,
+        'timestamp' => now(),
+        'environment' => app()->environment()
+    ]);
+});
+
 // Root API info
 Route::get('/', function () {
     return response()->json([
@@ -141,7 +162,7 @@ Route::prefix('client')->group(function () {
     Route::post('/login', [ClientAuthController::class, 'login']);
     Route::post('/register', [ClientAuthController::class, 'register']);
     
-    Route::middleware('auth:client')->group(function () {
+    Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [ClientAuthController::class, 'logout']);
         Route::get('/profile', [ClientProfileController::class, 'getProfile']);
         Route::put('/profile', [ClientProfileController::class, 'updateProfile']);
@@ -157,7 +178,7 @@ Route::prefix('customer')->group(function () {
     Route::post('/register', [CustomerController::class, 'register']);
     
     // Protected KYC routes - require authentication
-    Route::middleware('auth:client')->group(function () {
+    Route::middleware('auth:sanctum')->group(function () {
         // Personal Information Collection (Story 3.2)
         Route::put('/personal-info', [CustomerController::class, 'updatePersonalInfo']);
         
@@ -187,6 +208,10 @@ Route::middleware('auth:sanctum')->prefix('client')->group(function () {
     Route::get('/payment-summary', [ClientProfileController::class, 'getPaymentSummary']);
     Route::put('/preferences', [ClientProfileController::class, 'updatePreferences']);
     Route::post('/upload-avatar', [ClientProfileController::class, 'uploadAvatar']);
+    
+    // M-Pesa Payments and Transactions
+    Route::get('/mpesa-transactions', [ClientProfileController::class, 'getMpesaTransactions']);
+    Route::get('/payment-orders', [ClientProfileController::class, 'getPaymentOrders']);
 });
 
 // ==============================================
@@ -246,6 +271,10 @@ Route::prefix('mpesa')->group(function () {
     Route::post('stk-push', [MpesaController::class, 'stkPush']); // Initiate STK Push
     Route::post('stk-query', [MpesaController::class, 'stkQuery']); // Query STK Push status
     Route::post('stk-callback', [MpesaController::class, 'stkCallback']); // STK Push callback (called by Safaricom)
+    
+    // Payment Order routes
+    Route::post('create-payment-order', [MpesaController::class, 'createPaymentOrder']); // Create payment order
+    Route::post('payment-order-status', [MpesaController::class, 'getPaymentOrderStatus']); // Get payment order status
     
     // C2B routes (Buy Goods and Paybill)
     Route::post('register-urls', [MpesaController::class, 'mpesaRegisterUrls']); // Register validation and confirmation URLs

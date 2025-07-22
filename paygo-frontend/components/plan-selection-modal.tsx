@@ -8,10 +8,11 @@ import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Checkbox } from '@/components/ui/checkbox'
 import { AlertCircle, Calendar, CreditCard, DollarSign, FileText, ShoppingCart } from 'lucide-react'
-import { PayGoPlan, Product, formatPrice, formatInstallment, formatDuration } from '@/lib/api'
+import { PayGoPlan, Product, formatKshPrice, formatInstallment, formatDuration } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useToast } from "@/hooks/use-toast"
+import { authService } from '@/lib/auth'
 
 interface PlanSelectionModalProps {
   plan: PayGoPlan
@@ -74,7 +75,7 @@ export default function PlanSelectionModal({ plan, product, isOpen, onOpenChange
         quote_id: quoteId,
         product_id: product.id,
         product_name: product.name,
-        product_price: product.price,
+        product_price: product.price_ksh,
         selected_plan: plan,
         created_at: new Date().toISOString(),
         expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
@@ -86,8 +87,29 @@ export default function PlanSelectionModal({ plan, product, isOpen, onOpenChange
       // Also save to localStorage as backup
       localStorage.setItem('pending_paygo_purchase', JSON.stringify(planSession))
       
-      // Navigate to registration/login with plan context
-      router.push(`/register?plan=${quoteId}&product=${product.id}`)
+      // Check authentication status
+      const isAuthenticated = authService.isAuthenticated()
+      console.log('🔐 User authenticated:', isAuthenticated)
+      
+      if (isAuthenticated) {
+        // User is logged in - go directly to checkout
+        console.log('✅ User authenticated, proceeding to checkout')
+        toast({
+          title: "Proceeding to Checkout! 🚀",
+          description: "Taking you to secure checkout...",
+          variant: "default",
+        })
+        router.push(`/checkout?plan=${quoteId}`)
+      } else {
+        // User not logged in - go to registration with plan context
+        console.log('❌ User not authenticated, proceeding to registration')
+        toast({
+          title: "Registration Required",
+          description: "Please create an account to proceed with your PayGo plan.",
+          variant: "default",
+        })
+        router.push(`/register?plan=${quoteId}&product=${product.id}`)
+      }
       
     } catch (error) {
       console.error('Error initiating purchase:', error)
@@ -127,7 +149,7 @@ export default function PlanSelectionModal({ plan, product, isOpen, onOpenChange
                   <p className="text-sm text-gray-600">Model: {product.model_code}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-bold text-green-600">{formatPrice(product.price)}</p>
+                  <p className="text-2xl font-bold text-green-600">{formatKshPrice(product.price_ksh)}</p>
                   <p className="text-sm text-gray-500">Full Price</p>
                 </div>
               </div>
@@ -166,11 +188,11 @@ export default function PlanSelectionModal({ plan, product, isOpen, onOpenChange
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span>Down Payment</span>
-                  <span className="font-medium">{formatPrice(plan.down_payment)}</span>
+                  <span className="font-medium">{formatKshPrice(plan.down_payment)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Financing Amount</span>
-                  <span className="font-medium">{formatPrice(plan.financing_amount)}</span>
+                  <span className="font-medium">{formatKshPrice(plan.financing_amount)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Total Installments</span>
@@ -179,7 +201,7 @@ export default function PlanSelectionModal({ plan, product, isOpen, onOpenChange
                 <Separator />
                 <div className="flex justify-between text-base font-semibold">
                   <span>Total Cost</span>
-                  <span className="text-green-600">{formatPrice(plan.total_cost)}</span>
+                  <span className="text-green-600">{formatKshPrice(plan.total_cost)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Interest Rate</span>
@@ -203,7 +225,7 @@ export default function PlanSelectionModal({ plan, product, isOpen, onOpenChange
                   <div key={payment.installment_number} className="flex justify-between items-center p-2 bg-gray-50 rounded">
                     <span className="text-sm">Payment #{payment.installment_number}</span>
                     <div className="text-right">
-                      <div className="font-medium">{formatPrice(payment.amount)}</div>
+                      <div className="font-medium">{formatKshPrice(payment.amount)}</div>
                       <div className="text-xs text-gray-500">
                         Due: {new Date(payment.due_date).toLocaleDateString()}
                       </div>

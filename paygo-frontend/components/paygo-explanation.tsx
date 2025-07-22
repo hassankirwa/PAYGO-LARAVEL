@@ -72,15 +72,15 @@ export default function PayGoExplanation() {
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Total Price:</span>
-                    <span className="text-2xl font-bold text-gray-900">$1,290</span>
+                    <span className="text-2xl font-bold text-gray-900">KSh 180,600</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Down Payment:</span>
-                    <span className="text-lg font-semibold text-emerald-600">$129 (10%)</span>
+                    <span className="text-lg font-semibold text-emerald-600">KSh 18,060 (10%)</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Weekly Payment:</span>
-                    <span className="text-lg font-semibold text-emerald-600">$25</span>
+                    <span className="text-lg font-semibold text-emerald-600">KSh 3,500</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-600">Payment Period:</span>

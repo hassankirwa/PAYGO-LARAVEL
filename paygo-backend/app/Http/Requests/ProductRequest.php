@@ -33,9 +33,9 @@ class ProductRequest extends FormRequest
             'defrost_type' => 'nullable|in:Manual,Automatic',
             'cash_warranty_months' => 'nullable|integer|min:0|max:120',
             'paygo_warranty_months' => 'nullable|integer|min:0|max:120',
-            'price_usd' => 'required|numeric|min:0|max:999999.99',
-            'weekly_installment_usd' => 'required|numeric|min:0|max:99999.99',
-            'monthly_installment_usd' => 'nullable|numeric|min:0|max:99999.99',
+            'price_ksh' => 'required|numeric|min:0|max:9999999.99',
+            'weekly_installment_ksh' => 'required|numeric|min:0|max:999999.99',
+            'monthly_installment_ksh' => 'nullable|numeric|min:0|max:999999.99',
             'features' => 'nullable|array',
             'features.*' => 'string|max:100',
             'images' => 'nullable|array',
@@ -84,17 +84,17 @@ class ProductRequest extends FormRequest
             'paygo_warranty_months.integer' => 'PayGo warranty must be a whole number of months.',
             'paygo_warranty_months.min' => 'PayGo warranty cannot be negative.',
             'paygo_warranty_months.max' => 'PayGo warranty cannot exceed 120 months.',
-            'price_usd.required' => 'Product price is required.',
-            'price_usd.numeric' => 'Price must be a valid number.',
-            'price_usd.min' => 'Price cannot be negative.',
-            'price_usd.max' => 'Price cannot exceed $999,999.99.',
-            'weekly_installment_usd.required' => 'Weekly installment amount is required.',
-            'weekly_installment_usd.numeric' => 'Weekly installment must be a valid number.',
-            'weekly_installment_usd.min' => 'Weekly installment cannot be negative.',
-            'weekly_installment_usd.max' => 'Weekly installment cannot exceed $99,999.99.',
-            'monthly_installment_usd.numeric' => 'Monthly installment must be a valid number.',
-            'monthly_installment_usd.min' => 'Monthly installment cannot be negative.',
-            'monthly_installment_usd.max' => 'Monthly installment cannot exceed $99,999.99.',
+            'price_ksh.required' => 'Product price is required.',
+            'price_ksh.numeric' => 'Price must be a valid number.',
+            'price_ksh.min' => 'Price cannot be negative.',
+            'price_ksh.max' => 'Price cannot exceed KSh 9,999,999.99.',
+            'weekly_installment_ksh.required' => 'Weekly installment amount is required.',
+            'weekly_installment_ksh.numeric' => 'Weekly installment must be a valid number.',
+            'weekly_installment_ksh.min' => 'Weekly installment cannot be negative.',
+            'weekly_installment_ksh.max' => 'Weekly installment cannot exceed KSh 999,999.99.',
+            'monthly_installment_ksh.numeric' => 'Monthly installment must be a valid number.',
+            'monthly_installment_ksh.min' => 'Monthly installment cannot be negative.',
+            'monthly_installment_ksh.max' => 'Monthly installment cannot exceed KSh 999,999.99.',
             'features.array' => 'Features must be provided as a list.',
             'features.*.string' => 'Each feature must be text.',
             'features.*.max' => 'Each feature cannot exceed 100 characters.',
@@ -120,9 +120,9 @@ class ProductRequest extends FormRequest
             'defrost_type' => 'defrost type',
             'cash_warranty_months' => 'cash warranty period',
             'paygo_warranty_months' => 'PayGo warranty period',
-            'price_usd' => 'price',
-            'weekly_installment_usd' => 'weekly installment',
-            'monthly_installment_usd' => 'monthly installment',
+            'price_ksh' => 'price',
+            'weekly_installment_ksh' => 'weekly installment',
+            'monthly_installment_ksh' => 'monthly installment',
             'is_active' => 'active status',
         ];
     }
@@ -134,13 +134,13 @@ class ProductRequest extends FormRequest
     {
         $validator->after(function ($validator) {
             // Custom validation: weekly installment should be reasonable compared to price
-            if ($this->has('price_usd') && $this->has('weekly_installment_usd')) {
-                $price = (float) $this->input('price_usd');
-                $weeklyInstallment = (float) $this->input('weekly_installment_usd');
+            if ($this->has('price_ksh') && $this->has('weekly_installment_ksh')) {
+                $price = (float) $this->input('price_ksh');
+                $weeklyInstallment = (float) $this->input('weekly_installment_ksh');
                 
                 if ($weeklyInstallment > $price) {
                     $validator->errors()->add(
-                        'weekly_installment_usd', 
+                        'weekly_installment_ksh', 
                         'Weekly installment cannot be greater than the total price.'
                     );
                 }
@@ -150,7 +150,7 @@ class ProductRequest extends FormRequest
                     $totalWeeks = $price / $weeklyInstallment;
                     if ($totalWeeks > 260) { // More than 5 years
                         $validator->errors()->add(
-                            'weekly_installment_usd', 
+                            'weekly_installment_ksh', 
                             'Weekly installment is too low. Payment period would exceed 5 years.'
                         );
                     }
@@ -158,14 +158,14 @@ class ProductRequest extends FormRequest
             }
             
             // Validate monthly installment against weekly if both provided
-            if ($this->has('weekly_installment_usd') && $this->has('monthly_installment_usd')) {
-                $weeklyInstallment = (float) $this->input('weekly_installment_usd');
-                $monthlyInstallment = (float) $this->input('monthly_installment_usd');
+            if ($this->has('weekly_installment_ksh') && $this->has('monthly_installment_ksh')) {
+                $weeklyInstallment = (float) $this->input('weekly_installment_ksh');
+                $monthlyInstallment = (float) $this->input('monthly_installment_ksh');
                 $expectedMonthly = round($weeklyInstallment * 4.33, 2);
                 
                 if (abs($monthlyInstallment - $expectedMonthly) > 1.00) {
                     $validator->errors()->add(
-                        'monthly_installment_usd', 
+                        'monthly_installment_ksh', 
                         "Monthly installment should be approximately $expectedMonthly based on weekly installment."
                     );
                 }
