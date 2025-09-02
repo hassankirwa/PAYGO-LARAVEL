@@ -13,6 +13,7 @@ class Appliance extends Model
 
     protected $fillable = [
         'unit_id',
+        'device_id',
         'serial_number',
         'client_id',
         'product_id',
@@ -24,7 +25,12 @@ class Appliance extends Model
         'last_ping',
         'last_maintenance_date',
         'warranty_expiry_date',
-        'installation_notes'
+        'installation_notes',
+        'last_payment_date',
+        'next_payment_due',
+        'total_paid',
+        'remaining_balance',
+        'is_active'
     ];
 
     protected $casts = [

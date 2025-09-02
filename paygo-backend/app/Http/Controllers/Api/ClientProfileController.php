@@ -304,85 +304,145 @@ class ClientProfileController extends Controller
     }
 
     /**
-     * Get M-Pesa transactions for the authenticated client
+     * Get M-Pesa transactions for the authenticated client (includes both STK Push and Paybill transactions)
      */
     public function getMpesaTransactions(Request $request)
     {
         try {
-            $client = Auth::guard('sanctum')->user();
+            $user = Auth::user();
             
-            if (!$client) {
+            if (!$user) {
                 return response()->json([
                     'success' => false,
                     'error' => 'Unauthorized'
                 ], 401);
             }
 
+            // Find the client record
+            $client = \App\Models\Client::where('email', $user->email)
+                           ->orWhere('phone', $user->phone)
+                           ->first();
+
+            if (!$client) {
+                return response()->json([
+                    'success' => true,
+                    'data' => [],
+                    'pagination' => [
+                        'current_page' => 1,
+                        'last_page' => 1,
+                        'per_page' => 15,
+                        'total' => 0,
+                        'from' => null,
+                        'to' => null,
+                    ]
+                ]);
+            }
+
             // Get query parameters for filtering
-            $status = $request->query('status'); // 'successful', 'failed', 'all'
-            $perPage = $request->query('per_page', 10);
+            $status = $request->query('status', 'all'); // 'completed', 'failed', 'all'
+            $perPage = $request->query('per_page', 15);
             $page = $request->query('page', 1);
 
-            // Base query for M-Pesa transactions related to this client
-            $query = \App\Models\MpesaTransaction::query()
-                ->join('payment_orders', 'mpesa_transactions.checkout_request_id', '=', 'payment_orders.checkout_request_id')
-                ->where('payment_orders.client_id', $client->id)
-                ->select([
-                    'mpesa_transactions.*',
-                    'payment_orders.order_reference',
-                    'payment_orders.customer_name',
-                    'payment_orders.product_name',
-                    'payment_orders.payment_type',
-                    'payment_orders.paid_amount as order_amount'
-                ])
-                ->orderBy('mpesa_transactions.created_at', 'desc');
+            // Collect all transactions from different sources
+            $allTransactions = collect([]);
 
-            // Apply status filter
-            if ($status === 'successful') {
-                $query->where('mpesa_transactions.result_code', 0);
+            // 1. Get M-Pesa STK Push transactions (old system)
+            // Handle different phone number formats for matching
+            $clientPhoneFormats = $this->getPhoneNumberVariations($client->phone);
+            $stkQuery = \App\Models\MpesaTransaction::whereIn('phone_number', $clientPhoneFormats);
+            
+            if ($status === 'completed') {
+                $stkQuery->where('result_code', 0);
             } elseif ($status === 'failed') {
-                $query->where('mpesa_transactions.result_code', '!=', 0);
+                $stkQuery->where('result_code', '!=', 0);
             }
-            // 'all' or no status filter shows everything
-
-            $transactions = $query->paginate($perPage, ['*'], 'page', $page);
-
-            // Format the results
-            $formattedTransactions = $transactions->map(function ($transaction) {
+            
+            $stkTransactions = $stkQuery->get()->map(function ($transaction) {
                 return [
-                    'id' => $transaction->id,
-                    'order_reference' => $transaction->order_reference,
-                    'product_name' => $transaction->product_name,
-                    'payment_type' => $transaction->payment_type,
-                    'amount' => $transaction->amount ?? $transaction->order_amount,
+                    'id' => 'stk_' . $transaction->id,
+                    'type' => 'stk_push',
+                    'order_reference' => $transaction->checkout_request_id ?? 'N/A',
                     'mpesa_receipt_number' => $transaction->mpesa_receipt_number,
+                    'amount' => $transaction->amount,
+                    'formatted_amount' => 'KSh ' . number_format($transaction->amount, 2),
                     'phone_number' => $transaction->phone_number,
+                    'transaction_date' => $transaction->transaction_date,
                     'result_code' => $transaction->result_code,
                     'result_desc' => $transaction->result_desc,
-                    'transaction_date' => $transaction->transaction_date,
-                    'status' => $transaction->result_code == 0 ? 'successful' : 'failed',
-                    'status_label' => $transaction->result_code == 0 ? 'Successful' : 'Failed',
+                    'status' => $transaction->result_code == 0 ? 'completed' : 'failed',
+                    'raw_payload' => $transaction->raw_payload,
                     'created_at' => $transaction->created_at,
+                    'updated_at' => $transaction->updated_at,
                 ];
             });
 
+            $allTransactions = $allTransactions->merge($stkTransactions);
+
+            // 2. Get Paybill transactions (current system)
+            $paybillQuery = \App\Models\PaybillTransaction::where(function($q) use ($client, $clientPhoneFormats) {
+                $q->where('client_id', $client->id)
+                  ->orWhereIn('msisdn', $clientPhoneFormats);
+            });
+            
+            if ($status === 'completed') {
+                $paybillQuery->where('status', 'processed');
+            } elseif ($status === 'failed') {
+                $paybillQuery->where('status', 'failed');
+            }
+            
+            $paybillTransactions = $paybillQuery->get()->map(function ($transaction) {
+                return [
+                    'id' => 'paybill_' . $transaction->id,
+                    'type' => 'paybill',
+                    'order_reference' => $transaction->trans_id ?? 'N/A',
+                    'mpesa_receipt_number' => $transaction->mpesa_receipt_number ?? $transaction->trans_id,
+                    'amount' => $transaction->trans_amount,
+                    'formatted_amount' => 'KSh ' . number_format($transaction->trans_amount, 2),
+                    'phone_number' => $transaction->msisdn,
+                    'transaction_date' => $transaction->created_at, // Use created_at since trans_time format may vary
+                    'result_code' => $transaction->status === 'processed' ? 0 : 1,
+                    'result_desc' => $transaction->status === 'processed' ? 'Success' : 'Failed',
+                    'status' => $transaction->status === 'processed' ? 'completed' : ($transaction->status === 'failed' ? 'failed' : 'pending'),
+                    'payment_type' => $transaction->payment_type,
+                    'raw_payload' => $transaction->raw_payload,
+                    'created_at' => $transaction->created_at,
+                    'updated_at' => $transaction->updated_at,
+                ];
+            });
+
+            $allTransactions = $allTransactions->merge($paybillTransactions);
+
+            // Sort all transactions by created_at (newest first)
+            $allTransactions = $allTransactions->sortByDesc('created_at');
+
+            // Manual pagination
+            $totalRecords = $allTransactions->count();
+            $totalPages = ceil($totalRecords / $perPage);
+            $offset = ($page - 1) * $perPage;
+            $paginatedTransactions = $allTransactions->slice($offset, $perPage)->values();
+
             return response()->json([
                 'success' => true,
-                'data' => $formattedTransactions,
+                'data' => $paginatedTransactions,
                 'pagination' => [
-                    'current_page' => $transactions->currentPage(),
-                    'last_page' => $transactions->lastPage(),
-                    'per_page' => $transactions->perPage(),
-                    'total' => $transactions->total(),
-                    'from' => $transactions->firstItem(),
-                    'to' => $transactions->lastItem(),
+                    'current_page' => (int)$page,
+                    'last_page' => $totalPages,
+                    'per_page' => (int)$perPage,
+                    'total' => $totalRecords,
+                    'from' => $totalRecords > 0 ? $offset + 1 : null,
+                    'to' => $totalRecords > 0 ? min($offset + $perPage, $totalRecords) : null,
                 ]
             ]);
 
         } catch (\Exception $e) {
+            \Log::error('Failed to fetch M-Pesa transactions', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             return response()->json([
                 'success' => false,
-                'error' => 'Failed to fetch M-Pesa transactions: ' . $e->getMessage()
+                'error' => 'Failed to fetch payments: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -636,5 +696,50 @@ class ClientProfileController extends Controller
                 'error' => 'Failed to fetch transaction details'
             ], 500);
         }
+    }
+
+    /**
+     * Generate phone number variations for matching different formats
+     */
+    private function getPhoneNumberVariations($phoneNumber)
+    {
+        $variations = [];
+        
+        // Remove any non-digit characters
+        $cleanPhone = preg_replace('/\D/', '', $phoneNumber);
+        
+        // Add original phone number
+        $variations[] = $phoneNumber;
+        
+        // Add clean version
+        $variations[] = $cleanPhone;
+        
+        // If starts with 0, remove it and add 254 prefix
+        if (substr($cleanPhone, 0, 1) === '0') {
+            $withoutZero = substr($cleanPhone, 1);
+            $variations[] = $withoutZero;
+            $variations[] = '254' . $withoutZero;
+            $variations[] = '+254' . $withoutZero;
+        }
+        
+        // If starts with 254, add with and without + prefix
+        if (substr($cleanPhone, 0, 3) === '254') {
+            $variations[] = '+' . $cleanPhone;
+            $variations[] = $cleanPhone;
+            // Also add version with leading 0
+            $withoutCountryCode = '0' . substr($cleanPhone, 3);
+            $variations[] = $withoutCountryCode;
+        }
+        
+        // If starts with +254, add without + and with 0 prefix
+        if (substr($phoneNumber, 0, 4) === '+254') {
+            $withoutPlus = substr($phoneNumber, 1);
+            $variations[] = $withoutPlus;
+            $withoutCountryCode = '0' . substr($phoneNumber, 4);
+            $variations[] = $withoutCountryCode;
+        }
+        
+        // Remove duplicates and return
+        return array_unique($variations);
     }
 } 

@@ -198,31 +198,20 @@ class PaybillTransaction extends Model
         return $query->where('status', 'pending');
     }
 
-    public function scopeRecent($query, $days = 30)
+    public function scopeByPaymentType($query, $paymentType)
+    {
+        return $query->where('payment_type', $paymentType);
+    }
+
+    public function scopeRecent($query, $days)
     {
         return $query->where('created_at', '>=', now()->subDays($days));
     }
 
-    public function scopeByPaymentType($query, $type)
-    {
-        return $query->where('payment_type', $type);
-    }
-
-    // Static helper methods
-    public static function getTotalForClient($clientId, $days = null)
-    {
-        $query = static::forClient($clientId)->processed();
-        
-        if ($days) {
-            $query->recent($days);
-        }
-        
-        return $query->sum('trans_amount');
-    }
-
+    // Static methods for client dashboard
     public static function getCountForClient($clientId, $days = null)
     {
-        $query = static::forClient($clientId)->processed();
+        $query = static::forClient($clientId);
         
         if ($days) {
             $query->recent($days);
@@ -231,12 +220,58 @@ class PaybillTransaction extends Model
         return $query->count();
     }
 
-    public static function getRecentTransactionsForClient($clientId, $limit = 10)
+    public static function getTotalForClient($clientId, $days = null)
+    {
+        $query = static::forClient($clientId)->processed();
+        
+        if ($days) {
+            $query->recent($days);
+        }
+        
+        return $query->sum('trans_amount') ?: 0;
+    }
+
+    public static function getRecentTransactionsForClient($clientId, $limit = 5)
     {
         return static::forClient($clientId)
             ->with(['appliance', 'paymentOrder', 'paymentPlan'])
             ->orderBy('created_at', 'desc')
             ->limit($limit)
-            ->get();
+            ->get()
+            ->map(function ($transaction) {
+                return [
+                    'id' => $transaction->id,
+                    'trans_id' => $transaction->trans_id,
+                    'trans_amount' => $transaction->trans_amount,
+                    'device_id' => $transaction->device_id,
+                    'payment_type' => $transaction->payment_type,
+                    'status' => $transaction->status,
+                    'amount_matched' => $transaction->amount_matched,
+                    'credited_to_account' => $transaction->credited_to_account,
+                    'expected_amount' => $transaction->expected_amount,
+                    'customer_full_name' => $transaction->getCustomerFullNameAttribute(),
+                    'formatted_phone' => $transaction->getFormattedPhoneAttribute(),
+                    'transaction_date' => $transaction->getTransactionDateAttribute(),
+                    'processing_notes' => $transaction->processing_notes,
+                    'appliance' => $transaction->appliance ? [
+                        'id' => $transaction->appliance->id,
+                        'unit_id' => $transaction->appliance->unit_id,
+                        'installation_location' => $transaction->appliance->installation_location ?? 'Not specified'
+                    ] : null,
+                    'payment_order' => $transaction->paymentOrder ? [
+                        'id' => $transaction->paymentOrder->id,
+                        'order_reference' => $transaction->paymentOrder->order_reference,
+                        'product_name' => $transaction->paymentOrder->product_name ?? 'Unknown Product'
+                    ] : null,
+                    'payment_plan' => $transaction->paymentPlan ? [
+                        'id' => $transaction->paymentPlan->id,
+                        'payment_frequency' => $transaction->paymentPlan->payment_frequency,
+                        'installments_completed' => $transaction->paymentPlan->installments_completed ?? 0,
+                        'total_installments' => $transaction->paymentPlan->total_installments ?? 0
+                    ] : null,
+                    'created_at' => $transaction->created_at->toISOString(),
+                    'updated_at' => $transaction->updated_at->toISOString()
+                ];
+            });
     }
 }

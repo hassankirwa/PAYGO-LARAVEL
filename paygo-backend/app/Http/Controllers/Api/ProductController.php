@@ -93,6 +93,78 @@ class ProductController extends Controller
     }
 
     /**
+     * Display a listing of all products for admin (including inactive)
+     */
+    public function adminIndex(Request $request): JsonResponse
+    {
+        $query = Product::with('category');
+
+        // Search functionality
+        if ($request->has('search') && !empty($request->search)) {
+            $searchTerm = $request->search;
+            $query->where(function (Builder $q) use ($searchTerm) {
+                $q->where('name', 'LIKE', "%{$searchTerm}%")
+                  ->orWhere('model_code', 'LIKE', "%{$searchTerm}%")
+                  ->orWhere('description_text', 'LIKE', "%{$searchTerm}%");
+            });
+        }
+
+        // Category filter
+        if ($request->has('category_id') && !empty($request->category_id)) {
+            $query->where('category_id', $request->category_id);
+        }
+
+        // Status filter (for admin to see all products)
+        if ($request->has('status')) {
+            if ($request->status === 'active') {
+                $query->where('is_active', true);
+            } elseif ($request->status === 'inactive') {
+                $query->where('is_active', false);
+            }
+            // If 'all', don't filter by status
+        } else {
+            // Default: show all products for admin
+        }
+
+        // Price range filter
+        if ($request->has('min_price') && !empty($request->min_price)) {
+            $query->where('price_ksh', '>=', $request->min_price);
+        }
+        
+        if ($request->has('max_price') && !empty($request->max_price)) {
+            $query->where('price_ksh', '<=', $request->max_price);
+        }
+
+        // Sorting
+        $sortBy = $request->get('sort_by', 'created_at');
+        $sortOrder = $request->get('sort_order', 'desc');
+        
+        $allowedSortFields = ['name', 'price_ksh', 'capacity_litres', 'weekly_installment_ksh', 'created_at', 'updated_at'];
+        if (in_array($sortBy, $allowedSortFields)) {
+            $query->orderBy($sortBy, $sortOrder);
+        }
+
+        // Pagination
+        $perPage = min($request->get('per_page', 15), 50); // Max 50 items per page
+        $products = $query->paginate($perPage);
+
+        // Get categories for filter dropdown
+        $categories = ProductCategory::orderBy('name')->get();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Products retrieved successfully',
+            'data' => $products,
+            'meta' => [
+                'categories' => $categories,
+                'total_active' => Product::where('is_active', true)->count(),
+                'total_inactive' => Product::where('is_active', false)->count(),
+                'total_products' => Product::count(),
+            ]
+        ]);
+    }
+
+    /**
      * Store a newly created product
      */
     public function store(ProductRequest $request): JsonResponse

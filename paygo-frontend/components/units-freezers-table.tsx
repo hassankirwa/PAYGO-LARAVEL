@@ -1,328 +1,457 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Power, PowerOff, Refrigerator, Search, Filter, Thermometer, Battery } from "lucide-react"
-import { appliances } from "@/lib/appliances"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { 
+  Power, 
+  PowerOff, 
+  Refrigerator, 
+  Search, 
+  Thermometer, 
+  Battery, 
+  RefreshCw,
+  Settings,
+  AlertCircle,
+  CheckCircle,
+  Loader2,
+  Eye
+} from "lucide-react"
+import { authService } from "@/lib/auth"
 import { AnalyticsCard } from "./analytics-card"
 import { useToast } from "@/hooks/use-toast"
 
+interface ApplianceData {
+  id: number
+  unit_id: string
+  serial_number: string
+  device_id: string
+  status: "active" | "offline" | "maintenance" | "decommissioned"
+  database_status: "active" | "offline" | "maintenance" | "decommissioned"
+  is_online: boolean
+  client: {
+    id: number | null
+    name: string
+    phone: string | null
+  }
+  product: {
+    id: number | null
+    name: string
+    model_code: string
+    capacity_litres: number | null
+  }
+  installation_location: string
+  installation_date: string
+  installation_date_formatted: string
+  current_temperature: string | null
+  current_battery_voltage: string | null
+  last_ping: string | null
+  last_ping_formatted: string | null
+  last_maintenance_date: string | null
+  created_at: string
+  updated_at: string
+}
+
+interface PaginationData {
+  current_page: number
+  last_page: number
+  per_page: number
+  total: number
+  from: number | null
+  to: number | null
+}
+
 export function UnitsFreezersTable() {
   const { toast } = useToast()
+  
+  // Data state
+  const [appliances, setAppliances] = useState<ApplianceData[]>([])
+  const [pagination, setPagination] = useState<PaginationData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  
+  // Filter and search state
   const [searchTerm, setSearchTerm] = useState("")
   const [filterStatus, setFilterStatus] = useState("all")
-  const [sortColumn, setSortColumn] = useState<string | null>(null)
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
+  const [sortColumn, setSortColumn] = useState<string>("created_at")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
+  const [currentPage, setCurrentPage] = useState(1)
+  
+  // Action states
+  const [actionLoading, setActionLoading] = useState<Record<number, boolean>>({})
 
-  // Calculate stats
-  const totalUnits = appliances.length
-  const activeUnits = appliances.filter((app) => app.status === "active").length
-  const offlineUnits = appliances.filter((app) => app.status === "offline").length
-  const maintenanceUnits = appliances.filter((app) => app.status === "maintenance").length
-
-  const filteredAndSortedAppliances = appliances
-    .filter((appliance) => {
-      const matchesSearch =
-        appliance.unitId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        appliance.model.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        appliance.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        appliance.location.toLowerCase().includes(searchTerm.toLowerCase())
-      const matchesFilter = filterStatus === "all" || appliance.status === filterStatus
-      return matchesSearch && matchesFilter
-    })
-    .sort((a, b) => {
-      if (!sortColumn) return 0
-      const aValue = (a as any)[sortColumn]
-      const bValue = (b as any)[sortColumn]
-
-      if (typeof aValue === "string" && typeof bValue === "string") {
-        return sortDirection === "asc" ? aValue.localeCompare(bValue) : bValue.localeCompare(aValue)
+  // Load appliances from API
+  const fetchAppliances = async (resetPage = false) => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      const page = resetPage ? 1 : currentPage
+      if (resetPage) setCurrentPage(1)
+      
+      const response = await authService.getAppliances({
+        search: searchTerm || undefined,
+        status: filterStatus !== "all" ? filterStatus : undefined,
+        page,
+        per_page: 20,
+        sort_by: sortColumn,
+        sort_direction: sortDirection,
+      })
+      
+      if (response.success) {
+        setAppliances(response.data)
+        setPagination(response.pagination)
+      } else {
+        throw new Error(response.error || "Failed to fetch appliances")
       }
-      if (typeof aValue === "number" && typeof bValue === "number") {
-        return sortDirection === "asc" ? aValue - bValue : bValue - aValue
-      }
-      return 0
-    })
-
-  const handleSort = (column: string) => {
-    if (sortColumn === column) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc")
-    } else {
-      setSortColumn(column)
-      setSortDirection("asc")
-    }
-  }
-
-  const handleToggleUnit = (unitId: string, currentStatus: string) => {
-    const action = currentStatus === "active" ? "turn off" : "turn on"
-    if (confirm(`Are you sure you want to ${action} unit ${unitId}?`)) {
+    } catch (err: any) {
+      setError(err.message || "Failed to load appliances")
       toast({
-      title: `Unit ${action === "turn off" ? "Turned Off" : "Turned On"}! 🔌`,
-      description: `Unit ${unitId} ${action === "turn off" ? "turned off" : "turned on"} successfully!`,
-      variant: "default",
-    })
+        title: "Error",
+        description: "Failed to load appliances. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
     }
   }
 
-  const getStatusBadgeClass = (status: string) => {
-    switch (status) {
-      case "active":
-        return "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400"
-      case "offline":
-        return "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400"
-      case "maintenance":
-        return "bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400"
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400"
+  // Load data on component mount and when filters change
+  useEffect(() => {
+    fetchAppliances(true)
+  }, [searchTerm, filterStatus, sortColumn, sortDirection])
+  
+  useEffect(() => {
+    if (currentPage > 1) {
+      fetchAppliances()
     }
-  }
+  }, [currentPage])
 
-  const getBatteryStatus = (voltage: string) => {
-    const numVoltage = parseFloat(voltage.replace('V', ''))
-    if (numVoltage >= 12) return { color: "text-green-600 dark:text-green-400", status: "Good" }
-    if (numVoltage >= 11) return { color: "text-yellow-600 dark:text-yellow-400", status: "Low" }
-    return { color: "text-red-600 dark:text-red-400", status: "Critical" }
+  // Calculate stats from loaded data
+  const stats = {
+    totalUnits: pagination?.total || 0,
+    activeUnits: appliances.filter(app => app.status === "active").length,
+    offlineUnits: appliances.filter(app => app.status === "offline").length,
+    maintenanceUnits: appliances.filter(app => app.status === "maintenance").length,
+    onlineUnits: appliances.filter(app => app.is_online).length,
   }
 
   return (
     <div className="space-y-6 lg:space-y-8">
-      {/* Enhanced Appliance Stats - Responsive Grid */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6">
         <AnalyticsCard
+          title="Total Units"
+          value={stats.totalUnits.toLocaleString()}
+          description="All registered appliances"
+          icon={Refrigerator}
+          gradient="from-blue-500 to-blue-700"
+          trend={{ value: "+0", type: "neutral" }}
+        />
+        <AnalyticsCard
           title="Active Units"
-          value={activeUnits.toLocaleString()}
+          value={stats.activeUnits.toLocaleString()}
           description="Currently operational"
           icon={Power}
           gradient="from-green-500 to-green-700"
           trend={{ value: "+5", type: "up" }}
         />
         <AnalyticsCard
-          title="Offline Units"
-          value={offlineUnits.toLocaleString()}
-          description="Not responding"
-          icon={PowerOff}
-          gradient="from-red-500 to-red-700"
+          title="Online Units"
+          value={stats.onlineUnits.toLocaleString()}
+          description="Connected to network"
+          icon={CheckCircle}
+          gradient="from-emerald-500 to-emerald-700"
+          trend={{ value: `${Math.round((stats.onlineUnits / Math.max(stats.totalUnits, 1)) * 100)}%`, type: "up" }}
         />
         <AnalyticsCard
           title="Maintenance"
-          value={maintenanceUnits.toLocaleString()}
-          description="Under service"
-          icon={Refrigerator}
+          value={stats.maintenanceUnits.toLocaleString()}
+          description="Units under service"
+          icon={Settings}
           gradient="from-orange-500 to-orange-700"
-        />
-        <AnalyticsCard
-          title="Total Units"
-          value={totalUnits.toLocaleString()}
-          description="All registered units"
-          icon={Refrigerator}
-          gradient="from-blue-500 to-blue-700"
-          trend={{ value: "+12", type: "up" }}
+          trend={{ value: "-2", type: "down" }}
         />
       </div>
 
-      {/* Responsive Units/Freezers Table */}
-      <Card className="border-0 shadow-lg bg-white dark:bg-slate-900">
-        <CardHeader className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-              <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100">
-                Units & Freezers Management
-              </CardTitle>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Monitor and control your appliance inventory
-              </p>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                <Input
-                  placeholder="Search units..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 w-full sm:w-[250px]"
-                />
-              </div>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm"
-              >
-                <option value="all">All Status</option>
-                <option value="active">Active</option>
-                <option value="offline">Offline</option>
-                <option value="maintenance">Maintenance</option>
-              </select>
-            </div>
+      {/* Main Management Interface */}
+      <Card>
+        <CardHeader className="pb-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <CardTitle className="text-xl font-bold">Units & Freezers Management</CardTitle>
+            <Button
+              onClick={() => fetchAppliances()}
+              disabled={loading}
+              variant="outline"
+              size="sm"
+            >
+              {loading ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Refresh
+            </Button>
           </div>
         </CardHeader>
-
-        <CardContent className="p-0">
-          {/* Desktop Table View */}
-          <div className="hidden lg:block overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-gray-800">
-                <tr>
-                  <th className="py-3 px-4 lg:px-6 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => handleSort("unitId")}>
-                    <div className="flex items-center gap-2">
-                      <Refrigerator className="h-4 w-4" />
-                      Unit ID
-                    </div>
-                  </th>
-                  <th className="py-3 px-4 lg:px-6 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => handleSort("model")}>
-                    Model
-                  </th>
-                  <th className="py-3 px-4 lg:px-6 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => handleSort("clientName")}>
-                    Client
-                  </th>
-                  <th className="py-3 px-4 lg:px-6 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => handleSort("location")}>
-                    Location
-                  </th>
-                  <th className="py-3 px-4 lg:px-6 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    <div className="flex items-center gap-2">
-                      <Thermometer className="h-4 w-4" />
-                      Temperature
-                    </div>
-                  </th>
-                  <th className="py-3 px-4 lg:px-6 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    <div className="flex items-center gap-2">
-                      <Battery className="h-4 w-4" />
-                      Battery
-                    </div>
-                  </th>
-                  <th className="py-3 px-4 lg:px-6 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700" onClick={() => handleSort("status")}>
-                    Status
-                  </th>
-                  <th className="py-3 px-4 lg:px-6 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-                {filteredAndSortedAppliances.map((appliance) => {
-                  const batteryStatus = getBatteryStatus(appliance.batteryVoltage)
-                  return (
-                    <tr key={appliance.id} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-                      <td className="py-3 px-4 lg:px-6">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-semibold text-sm">
-                            {appliance.unitId.split('-')[1] || 'U'}
-                          </div>
-                          <div>
-                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{appliance.unitId}</div>
-                            <div className="text-sm text-gray-500 dark:text-gray-400">{appliance.type}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 lg:px-6 text-sm text-gray-900 dark:text-gray-100">{appliance.model}</td>
-                      <td className="py-3 px-4 lg:px-6 text-sm text-gray-900 dark:text-gray-100">{appliance.clientName}</td>
-                      <td className="py-3 px-4 lg:px-6 text-sm text-gray-900 dark:text-gray-100">{appliance.location}</td>
-                      <td className="py-3 px-4 lg:px-6">
-                        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{appliance.temperature}</span>
-                      </td>
-                      <td className="py-3 px-4 lg:px-6">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{appliance.batteryVoltage}</span>
-                          <span className={`text-xs font-medium ${batteryStatus.color}`}>({batteryStatus.status})</span>
-                        </div>
-                      </td>
-                      <td className="py-3 px-4 lg:px-6">
-                        <Badge className={getStatusBadgeClass(appliance.status)}>
-                          {appliance.status}
-                        </Badge>
-                      </td>
-                      <td className="py-3 px-4 lg:px-6">
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className={`p-2 ${
-                              appliance.status === "active"
-                                ? "hover:bg-red-50 dark:hover:bg-red-950/20 text-red-600 dark:text-red-400"
-                                : "hover:bg-green-50 dark:hover:bg-green-950/20 text-green-600 dark:text-green-400"
-                            }`}
-                            onClick={() => handleToggleUnit(appliance.unitId, appliance.status)}
-                          >
-                            {appliance.status === "active" ? <PowerOff className="h-3 w-3" /> : <Power className="h-3 w-3" />}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+        <CardContent>
+          {/* Search and Filter Controls */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search by unit ID, serial number, or client name..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <SelectTrigger className="w-full sm:w-48">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="offline">Offline</SelectItem>
+                <SelectItem value="maintenance">Maintenance</SelectItem>
+                <SelectItem value="decommissioned">Decommissioned</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          {/* Mobile Card View */}
-          <div className="lg:hidden divide-y divide-gray-200 dark:divide-gray-700">
-            {filteredAndSortedAppliances.map((appliance) => {
-              const batteryStatus = getBatteryStatus(appliance.batteryVoltage)
-              return (
-                <div key={appliance.id} className="p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-blue-600 rounded-lg flex items-center justify-center text-white font-semibold text-sm">
-                        {appliance.unitId.split('-')[1] || 'U'}
-                      </div>
-                      <div>
-                        <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{appliance.unitId}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">{appliance.model}</div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400">{appliance.clientName}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge className={getStatusBadgeClass(appliance.status)}>
-                        {appliance.status}
-                      </Badge>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className={`p-2 ${
-                          appliance.status === "active"
-                            ? "hover:bg-red-50 dark:hover:bg-red-950/20 text-red-600 dark:text-red-400"
-                            : "hover:bg-green-50 dark:hover:bg-green-950/20 text-green-600 dark:text-green-400"
-                        }`}
-                        onClick={() => handleToggleUnit(appliance.unitId, appliance.status)}
-                      >
-                        {appliance.status === "active" ? <PowerOff className="h-3 w-3" /> : <Power className="h-3 w-3" />}
-                      </Button>
-                    </div>
+          {/* Error State */}
+          {error && (
+            <Alert className="mb-6" variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Loading State */}
+          {loading ? (
+            <div className="space-y-4">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="flex items-center space-x-4 p-4 border rounded-lg">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="space-y-2 flex-1">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-48" />
                   </div>
-                  
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="text-gray-600 dark:text-gray-400">Location: </span>
-                      <span className="text-gray-900 dark:text-gray-100">{appliance.location}</span>
+                  <Skeleton className="h-6 w-16" />
+                  <Skeleton className="h-8 w-20" />
+                </div>
+              ))}
+            </div>
+          ) : appliances.length === 0 ? (
+            /* Empty State */
+            <div className="text-center p-12">
+              <Refrigerator className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+              <h3 className="text-lg font-semibold text-gray-600 mb-2">
+                {searchTerm || filterStatus !== "all" ? "No units found" : "No units registered yet"}
+              </h3>
+              <p className="text-gray-500 mb-4">
+                {searchTerm || filterStatus !== "all" 
+                  ? "Try adjusting your search terms or filters to find units."
+                  : "Start by registering your first freezer unit to begin tracking."}
+              </p>
+              {searchTerm || filterStatus !== "all" ? (
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setSearchTerm("")
+                    setFilterStatus("all")
+                  }}
+                >
+                  Clear Filters
+                </Button>
+              ) : (
+                <Button>
+                  <Settings className="h-4 w-4 mr-2" />
+                  Register New Unit
+                </Button>
+              )}
+            </div>
+          ) : (
+            /* Data Table */
+            <div className="space-y-4">
+              {/* Table Header */}
+              <div className="hidden lg:grid lg:grid-cols-12 gap-4 p-4 bg-gray-50 rounded-lg font-medium text-sm text-gray-600">
+                <div className="col-span-2">Unit Info</div>
+                <div className="col-span-2">Client</div>
+                <div className="col-span-2">Product</div>
+                <div className="col-span-2">Location</div>
+                <div className="col-span-2">Status</div>
+                <div className="col-span-2">Actions</div>
+              </div>
+
+              {/* Table Rows */}
+              {appliances.map((appliance) => (
+                <div key={appliance.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                    {/* Unit Info */}
+                    <div className="col-span-1 lg:col-span-2">
+                      <div className="flex items-start space-x-3">
+                        <div className="flex-shrink-0">
+                          <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <Refrigerator className="h-5 w-5 text-blue-600" />
+                          </div>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-gray-900">{appliance.unit_id}</p>
+                          <p className="text-sm text-gray-500">{appliance.serial_number}</p>
+                          <p className="text-xs text-gray-400">{appliance.device_id}</p>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-gray-600 dark:text-gray-400">Temperature: </span>
-                      <span className="text-gray-900 dark:text-gray-100">{appliance.temperature}</span>
+
+                    {/* Client Info */}
+                    <div className="col-span-1 lg:col-span-2">
+                      <div className="lg:hidden font-medium text-gray-600 mb-1">Client:</div>
+                      <p className="font-medium text-gray-900">{appliance.client.name}</p>
+                      {appliance.client.phone && (
+                        <p className="text-sm text-gray-500">{appliance.client.phone}</p>
+                      )}
                     </div>
-                    <div className="col-span-2">
-                      <span className="text-gray-600 dark:text-gray-400">Battery: </span>
-                      <span className="text-gray-900 dark:text-gray-100">{appliance.batteryVoltage}</span>
-                      <span className={`ml-1 ${batteryStatus.color}`}>({batteryStatus.status})</span>
+
+                    {/* Product Info */}
+                    <div className="col-span-1 lg:col-span-2">
+                      <div className="lg:hidden font-medium text-gray-600 mb-1">Product:</div>
+                      <p className="font-medium text-gray-900">{appliance.product.name}</p>
+                      <p className="text-sm text-gray-500">{appliance.product.model_code}</p>
+                      {appliance.product.capacity_litres && (
+                        <p className="text-xs text-gray-400">{appliance.product.capacity_litres}L</p>
+                      )}
                     </div>
-                  </div>
-                  
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    Last ping: {appliance.lastPing}
+
+                    {/* Location */}
+                    <div className="col-span-1 lg:col-span-2">
+                      <div className="lg:hidden font-medium text-gray-600 mb-1">Location:</div>
+                      <p className="text-sm text-gray-900">{appliance.installation_location}</p>
+                      <p className="text-xs text-gray-500">Installed: {appliance.installation_date_formatted}</p>
+                    </div>
+
+                    {/* Status */}
+                    <div className="col-span-1 lg:col-span-2">
+                      <div className="lg:hidden font-medium text-gray-600 mb-1">Status:</div>
+                      <div className="flex flex-col space-y-2">
+                        <Badge 
+                          variant={appliance.status === "active" ? "default" : 
+                                  appliance.status === "offline" ? "destructive" :
+                                  appliance.status === "maintenance" ? "secondary" : "outline"}
+                          className="w-fit"
+                        >
+                          {appliance.status === "active" && <Power className="h-3 w-3 mr-1" />}
+                          {appliance.status === "offline" && <PowerOff className="h-3 w-3 mr-1" />}
+                          {appliance.status === "maintenance" && <Settings className="h-3 w-3 mr-1" />}
+                          {appliance.status.charAt(0).toUpperCase() + appliance.status.slice(1)}
+                        </Badge>
+                        <div className="flex items-center space-x-2">
+                          <div className={`h-2 w-2 rounded-full ${appliance.is_online ? 'bg-green-500' : 'bg-red-500'}`} />
+                          <span className="text-xs text-gray-500">
+                            {appliance.is_online ? 'Online' : 'Offline'}
+                          </span>
+                        </div>
+                        {appliance.current_temperature && (
+                          <div className="flex items-center space-x-1">
+                            <Thermometer className="h-3 w-3 text-blue-500" />
+                            <span className="text-xs text-gray-600">{appliance.current_temperature}°C</span>
+                          </div>
+                        )}
+                        {appliance.current_battery_voltage && (
+                          <div className="flex items-center space-x-1">
+                            <Battery className="h-3 w-3 text-green-500" />
+                            <span className="text-xs text-gray-600">{appliance.current_battery_voltage}V</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="col-span-1 lg:col-span-2">
+                      <div className="lg:hidden font-medium text-gray-600 mb-1">Actions:</div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={actionLoading[appliance.id]}
+                        >
+                          <Eye className="h-3 w-3 mr-1" />
+                          View
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={appliance.status === "active" ? "destructive" : "default"}
+                          disabled={actionLoading[appliance.id]}
+                        >
+                          {appliance.status === "active" ? (
+                            <>
+                              <PowerOff className="h-3 w-3 mr-1" />
+                              Disable
+                            </>
+                          ) : (
+                            <>
+                              <Power className="h-3 w-3 mr-1" />
+                              Enable
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              )
-            })}
-          </div>
+              ))}
 
-          <div className="px-3 sm:px-4 lg:px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Showing {filteredAndSortedAppliances.length} units
-            </p>
-          </div>
+              {/* Pagination */}
+              {pagination && pagination.last_page > 1 && (
+                <div className="flex items-center justify-between pt-4">
+                  <div className="text-sm text-gray-600">
+                    Showing {pagination.from || 0} to {pagination.to || 0} of {pagination.total} units
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={currentPage === 1}
+                      onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                    >
+                      Previous
+                    </Button>
+                    <div className="flex items-center space-x-1">
+                      {[...Array(Math.min(5, pagination.last_page))].map((_, i) => {
+                        const page = i + 1
+                        return (
+                          <Button
+                            key={page}
+                            variant={page === currentPage ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setCurrentPage(page)}
+                          >
+                            {page}
+                          </Button>
+                        )
+                      })}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={currentPage === pagination.last_page}
+                      onClick={() => setCurrentPage(Math.min(pagination.last_page, currentPage + 1))}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
   )
-}
+} 

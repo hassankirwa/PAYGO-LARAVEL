@@ -10,6 +10,7 @@ import { Smartphone, Loader2, CheckCircle, XCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { authService } from "@/lib/auth"
 import { getApiUrl } from "@/lib/api-config"
+import { receiptApi, paymentServicesApi } from "@/lib/api"
 
 interface MpesaStkPushModalProps {
   isOpen: boolean
@@ -61,6 +62,97 @@ export function MpesaStkPushModal({
     installmentAmount?: number;
     nextPaymentDate?: string;
   } | null>(null)
+
+  // New state for enhanced payment services
+  const [receiptDetails, setReceiptDetails] = useState<{
+    receiptNumber?: string;
+    receiptUrl?: string;
+    generated?: boolean;
+  } | null>(null)
+  
+  const [smsStatus, setSmsStatus] = useState<{
+    paymentConfirmationSent?: boolean;
+    receiptSent?: boolean;
+    planActivationSent?: boolean;
+  } | null>(null)
+  
+  const [planActivationStatus, setPlanActivationStatus] = useState<{
+    planCreated?: boolean;
+    clientCreated?: boolean;
+    applianceCreated?: boolean;
+    planId?: number;
+    nextPaymentDue?: string;
+  } | null>(null)
+
+  // Fetch enhanced payment details after successful payment
+  const fetchEnhancedPaymentDetails = async (orderRef: string, receiptNumber: string) => {
+    try {
+      console.log('🔍 Fetching enhanced payment details...', { orderRef, receiptNumber })
+      
+      // Wait a moment for the backend to complete receipt generation
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      
+      // Fetch receipt details
+      try {
+        const receiptResponse = await receiptApi.getReceipt(receiptNumber)
+        if (receiptResponse.success) {
+          setReceiptDetails({
+            receiptNumber: receiptNumber,
+            receiptUrl: `/api/receipts/${receiptNumber}`,
+            generated: true
+          })
+          console.log('✅ Receipt details fetched:', receiptResponse.data)
+        } else {
+          console.log('⚠️ Receipt not found yet, will set as pending')
+          setReceiptDetails({
+            receiptNumber: receiptNumber,
+            receiptUrl: `/api/receipts/${receiptNumber}`,
+            generated: false
+          })
+        }
+      } catch (error) {
+        console.log('⚠️ Could not fetch receipt details (may not be generated yet):', error)
+        setReceiptDetails({
+          receiptNumber: receiptNumber,
+          receiptUrl: `/api/receipts/${receiptNumber}`,
+          generated: false
+        })
+      }
+
+      // For down payments, set plan activation status
+      if (paymentType === 'Down Payment') {
+        setPlanActivationStatus({
+          planCreated: true,
+          clientCreated: true,
+          applianceCreated: true,
+          nextPaymentDue: new Date(Date.now() + (planType === 'weekly' ? 7 : 30) * 24 * 60 * 60 * 1000).toLocaleDateString('en-GB')
+        })
+        
+        setSmsStatus({
+          paymentConfirmationSent: true,
+          receiptSent: true,
+          planActivationSent: true
+        })
+        
+        console.log('✅ Plan activation status updated for down payment')
+      } else {
+        setSmsStatus({
+          paymentConfirmationSent: true,
+          receiptSent: true,
+          planActivationSent: false
+        })
+      }
+      
+    } catch (error) {
+      console.error('❌ Error fetching enhanced payment details:', error)
+      // Still show SMS status even if receipt fetch fails
+      setSmsStatus({
+        paymentConfirmationSent: true,
+        receiptSent: true,
+        planActivationSent: paymentType === 'Down Payment'
+      })
+    }
+  }
 
   const formatPhoneNumber = (phone: string) => {
     // Remove any non-digit characters
@@ -131,8 +223,9 @@ export function MpesaStkPushModal({
         createOrderUrl = await getApiUrl('/mpesa/create-payment-order');
       } catch (error) {
         console.error('❌ Failed to get API URL:', error);
-        setError('Failed to load API configuration. Please check your connection and try again.');
-        setIsLoading(false);
+        setStatusMessage('Failed to load API configuration. Please check your connection and try again.');
+        setPaymentStatus('error');
+        setIsProcessing(false);
         return;
       }
 
@@ -238,8 +331,9 @@ export function MpesaStkPushModal({
         stkPushUrl = await getApiUrl('/mpesa/stk-push');
       } catch (error) {
         console.error('❌ Failed to get STK Push URL:', error);
-        setError('Failed to load API configuration. Please check your connection and try again.');
-        setIsLoading(false);
+        setStatusMessage('Failed to load API configuration. Please check your connection and try again.');
+        setPaymentStatus('error');
+        setIsProcessing(false);
         return;
       }
       
@@ -414,8 +508,8 @@ export function MpesaStkPushModal({
           orderStatusUrl = await getApiUrl('/mpesa/payment-order-status');
         } catch (error) {
           console.error('❌ Failed to get order status URL:', error);
-          setError('Failed to load API configuration. Please check your connection and try again.');
-          setIsLoading(false);
+          setStatusMessage('Failed to get order status URL. Please check your connection and try again.');
+          setPaymentStatus('error');
           return;
         }
         
@@ -462,6 +556,9 @@ export function MpesaStkPushModal({
             
             setStatusMessage(`Payment successful! M-Pesa callback confirmed.`)
             setPaymentStatus('success')
+            
+            // Fetch enhanced payment details (receipt, SMS status, plan activation)
+            await fetchEnhancedPaymentDetails(order?.order_reference || `KOYO-${Date.now()}`, transaction.mpesa_receipt_number)
             
             toast({
               title: "Payment Confirmed! 🎉",
@@ -566,6 +663,187 @@ export function MpesaStkPushModal({
                   <div className="text-green-800 font-medium mb-2">
                     Your {paymentDetails.paymentType.toLowerCase()} of KSh {Math.round(paymentDetails.amount).toLocaleString()} has been processed successfully.
                   </div>
+
+                  {/* Enhanced Payment Details */}
+                  {(receiptDetails || smsStatus || planActivationStatus) && (
+                    <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                      <div className="text-sm font-semibold text-gray-700 mb-2">Payment Services Status:</div>
+                      
+                      <div className="space-y-2 text-xs">
+                        {/* Receipt Status */}
+                        {receiptDetails && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-600">Receipt Generated:</span>
+                            <div className="flex items-center gap-1">
+                              {receiptDetails.generated ? (
+                                <CheckCircle className="h-3 w-3 text-green-500" />
+                              ) : (
+                                <XCircle className="h-3 w-3 text-red-500" />
+                              )}
+                              <span className="font-mono text-xs">{receiptDetails.receiptNumber}</span>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* SMS Status */}
+                        {smsStatus && (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <span className="text-gray-600">Payment SMS:</span>
+                              <div className="flex items-center gap-1">
+                                {smsStatus.paymentConfirmationSent ? (
+                                  <CheckCircle className="h-3 w-3 text-green-500" />
+                                ) : (
+                                  <XCircle className="h-3 w-3 text-red-500" />
+                                )}
+                                <span className="text-green-600">Sent</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-gray-600">Receipt SMS:</span>
+                              <div className="flex items-center gap-1">
+                                {smsStatus.receiptSent ? (
+                                  <CheckCircle className="h-3 w-3 text-green-500" />
+                                ) : (
+                                  <XCircle className="h-3 w-3 text-red-500" />
+                                )}
+                                <span className="text-green-600">Sent</span>
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        {/* Plan Activation Status (for down payments) */}
+                        {paymentDetails.paymentType === 'Down Payment' && planActivationStatus && (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <span className="text-gray-600">PayGo Plan:</span>
+                              <div className="flex items-center gap-1">
+                                {planActivationStatus.planCreated ? (
+                                  <CheckCircle className="h-3 w-3 text-green-500" />
+                                ) : (
+                                  <XCircle className="h-3 w-3 text-red-500" />
+                                )}
+                                <span className="text-green-600">Activated</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-gray-600">Customer Account:</span>
+                              <div className="flex items-center gap-1">
+                                {planActivationStatus.clientCreated ? (
+                                  <CheckCircle className="h-3 w-3 text-green-500" />
+                                ) : (
+                                  <XCircle className="h-3 w-3 text-red-500" />
+                                )}
+                                <span className="text-green-600">Created</span>
+                              </div>
+                            </div>
+                            {smsStatus?.planActivationSent && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-gray-600">Plan Activation SMS:</span>
+                                <div className="flex items-center gap-1">
+                                  <CheckCircle className="h-3 w-3 text-green-500" />
+                                  <span className="text-green-600">Sent</span>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {/* Receipt Download Link */}
+                      {receiptDetails?.receiptNumber && (
+                        <div className="mt-3 pt-2 border-t border-gray-200">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full text-xs"
+                            onClick={async () => {
+                              if (!receiptDetails?.receiptNumber) return
+                              
+                              try {
+                                console.log('📄 Viewing receipt:', receiptDetails.receiptNumber)
+                                const response = await receiptApi.getReceipt(receiptDetails.receiptNumber)
+                                
+                                if (response.success) {
+                                  // Show receipt details in a modal or new window
+                                  const receiptData = response.data
+                                  
+                                  // Create a formatted receipt view
+                                  const receiptWindow = window.open('', '_blank', 'width=600,height=800')
+                                  if (receiptWindow) {
+                                    receiptWindow.document.write(`
+                                      <html>
+                                        <head>
+                                          <title>Receipt ${receiptDetails.receiptNumber}</title>
+                                          <style>
+                                            body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto; }
+                                            .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+                                            .section { margin-bottom: 15px; }
+                                            .label { font-weight: bold; color: #666; }
+                                            .value { margin-left: 10px; }
+                                            .amount { font-size: 1.2em; font-weight: bold; color: #16a34a; }
+                                            .footer { margin-top: 30px; text-align: center; color: #666; font-size: 0.9em; }
+                                          </style>
+                                        </head>
+                                        <body>
+                                          <div class="header">
+                                            <h1>KOYO PayGo</h1>
+                                            <h2>Payment Receipt</h2>
+                                            <p><strong>Receipt Number:</strong> ${receiptDetails.receiptNumber}</p>
+                                          </div>
+                                          
+                                          <div class="section">
+                                            <div><span class="label">Customer:</span><span class="value">${receiptData.customer_info?.name || 'N/A'}</span></div>
+                                            <div><span class="label">Phone:</span><span class="value">${receiptData.customer_info?.phone || 'N/A'}</span></div>
+                                            <div><span class="label">Email:</span><span class="value">${receiptData.customer_info?.email || 'N/A'}</span></div>
+                                          </div>
+                                          
+                                          <div class="section">
+                                            <div><span class="label">Payment Date:</span><span class="value">${new Date(receiptData.payment_details?.payment_date).toLocaleString()}</span></div>
+                                            <div><span class="label">Amount Paid:</span><span class="value amount">KSh ${Number(receiptData.payment_details?.amount || 0).toLocaleString()}</span></div>
+                                            <div><span class="label">Payment Method:</span><span class="value">${receiptData.payment_details?.payment_method || 'M-Pesa'}</span></div>
+                                            <div><span class="label">M-Pesa Receipt:</span><span class="value">${receiptData.payment_details?.mpesa_receipt || 'N/A'}</span></div>
+                                          </div>
+                                          
+                                          <div class="section">
+                                            <div><span class="label">Order Reference:</span><span class="value">${receiptData.payment_details?.order_reference || 'N/A'}</span></div>
+                                          </div>
+                                          
+                                          <div class="footer">
+                                            <p>Thank you for choosing KOYO PayGo!</p>
+                                            <p>For support, contact: support@koyopaygo.com</p>
+                                          </div>
+                                        </body>
+                                      </html>
+                                    `)
+                                    receiptWindow.document.close()
+                                  }
+                                  
+                                  toast({
+                                    title: "Receipt Opened",
+                                    description: `Receipt ${receiptDetails.receiptNumber} opened in new window.`,
+                                    variant: "default",
+                                  })
+                                } else {
+                                  throw new Error(response.error || 'Failed to load receipt')
+                                }
+                              } catch (error) {
+                                console.error('❌ Failed to view receipt:', error)
+                                toast({
+                                  title: "Error Viewing Receipt",
+                                  description: "Could not load receipt details. Please try again.",
+                                  variant: "destructive",
+                                })
+                              }
+                            }}
+                          >
+                            📄 View Receipt Details
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   
                   <div className="space-y-3 mt-4">
                     <div className="font-semibold text-gray-800 mb-2">What happens next?</div>

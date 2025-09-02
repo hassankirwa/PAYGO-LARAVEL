@@ -25,7 +25,7 @@ import Link from "next/link"
 import { MpesaStkPushModal } from "@/components/mpesa-stk-push-modal"
 import { PaybillPaymentModal } from "@/components/paybill-payment-modal"
 import { VisaCardModal } from "@/components/visa-card-modal"
-import { formatKshPrice, Product, PayGoPlan, productsApi, convertLaravelProduct } from "@/lib/api"
+import { formatKshPrice, Product, PayGoPlan, productApi, convertLaravelProduct } from "@/lib/api"
 
 interface PaymentPlan {
   id: string
@@ -61,13 +61,15 @@ export default function CheckoutPage() {
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // State for payment methods
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('stk-push')
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false)
-  const [showMpesaModal, setShowMpesaModal] = useState(false)
+  const [showStkModal, setShowStkModal] = useState(false)
   const [showPaybillModal, setShowPaybillModal] = useState(false)
   const [showVisaModal, setShowVisaModal] = useState(false)
+  const [customerDeviceId, setCustomerDeviceId] = useState('')
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false)
   const [paymentSuccess, setPaymentSuccess] = useState(false)
-  
+
   // Load real plan data from session storage and fetch current product price
   useEffect(() => {
     const loadPlanData = async () => {
@@ -106,7 +108,7 @@ export default function CheckoutPage() {
         if (!planSession && planId) {
           const productId = searchParams.get('product')
           if (productId) {
-            const productResponse = await productsApi.getById(parseInt(productId))
+            const productResponse = await productApi.getProduct(parseInt(productId))
             if (productResponse.success) {
               const productData = convertLaravelProduct(productResponse.data)
               
@@ -161,7 +163,7 @@ export default function CheckoutPage() {
 
         // Fetch current product price to ensure accuracy
         try {
-          const productResponse = await productsApi.getById(planSession.product_id)
+          const productResponse = await productApi.getProduct(planSession.product_id)
           if (productResponse.success) {
             const currentProduct = convertLaravelProduct(productResponse.data)
             setProduct(currentProduct)
@@ -220,11 +222,25 @@ export default function CheckoutPage() {
     loadPlanData()
   }, [planId, searchParams])
 
+  // Generate customer device ID when component mounts
+  useEffect(() => {
+    if (!customerDeviceId) {
+      // Generate M-Pesa compatible device ID (8 characters max)
+      const random = Math.floor(Math.random() * 999999) + 1
+      const generatedId = `KY${random.toString().padStart(6, '0')}`
+      setCustomerDeviceId(generatedId)
+    }
+  }, [customerDeviceId])
+
   const handleStkPushPayment = () => {
-    setShowMpesaModal(true)
+    setShowStkModal(true)
   }
 
   const handlePaybillPayment = () => {
+    if (!customerDeviceId) {
+      alert('Error generating device ID. Please refresh the page.')
+      return
+    }
     setShowPaybillModal(true)
   }
 
@@ -233,18 +249,33 @@ export default function CheckoutPage() {
   }
 
   const handleCashPayment = () => {
-    setIsProcessingPayment(true)
     // Simulate cash payment processing
     setTimeout(() => {
-      setIsProcessingPayment(false)
-      setPaymentSuccess(true)
+      // Redirect to success page or show success message
+      router.push('/checkout/success?method=cash&device_id=' + customerDeviceId)
     }, 2000)
   }
 
   // Handle M-Pesa modal close - only close modal, don't simulate success
   const handleMpesaClose = () => {
-    setShowMpesaModal(false)
+    setShowStkModal(false)
     // Real success will be handled by the M-Pesa modal component via callback
+  }
+
+  const handlePaybillSuccess = () => {
+    // Handle successful PayBill payment
+    console.log('PayBill payment successful!')
+    
+    // Redirect to success page or show success message
+    router.push('/checkout/success?method=paybill&device_id=' + customerDeviceId)
+  }
+
+  const handlePaybillError = (error: string) => {
+    // Handle PayBill payment error
+    console.error('PayBill payment error:', error)
+    
+    // Show error message to user
+    alert('Payment failed: ' + error)
   }
 
   const getPaymentAmount = () => {
@@ -681,9 +712,9 @@ export default function CheckoutPage() {
       </div>
 
       {/* Payment Modals */}
-      {showMpesaModal && (
+      {showStkModal && (
         <MpesaStkPushModal
-          isOpen={showMpesaModal}
+          isOpen={showStkModal}
           onClose={handleMpesaClose}
           productName={plan.productName}
           paymentAmount={getPaymentAmount() || 0}
@@ -705,15 +736,12 @@ export default function CheckoutPage() {
           onClose={() => setShowPaybillModal(false)}
           productName={plan.productName}
           paymentAmount={getPaymentAmount() || 0}
-          paymentType={paymentMethod === 'cash' ? 'Full Payment' : 'Down Payment'}
-          quoteId={plan.id}
-          productId={plan.productId}
-          productPrice={plan.productPrice}
-          planType={plan.frequency}
-          downPaymentAmount={plan.downPayment}
-          installmentAmount={plan.installmentAmount}
-          totalInstallments={plan.totalInstallments}
-          planDuration={plan.planDuration}
+          paymentType={paymentMethod === 'cash' ? 'down_payment' : 'down_payment'}
+          customerDeviceId={customerDeviceId}
+          customerOrderId={plan.id}
+          customerPlanId={null}
+          onPaymentSuccess={handlePaybillSuccess}
+          onPaymentError={handlePaybillError}
         />
       )}
 

@@ -1,66 +1,79 @@
 "use client"
 
-import React, { useState, useEffect } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Calendar, CreditCard, Eye, Filter, RefreshCw, Search, Wallet } from 'lucide-react'
-import { formatCurrency, formatDate, formatPhoneNumber } from '@/lib/utils'
-import { getApiUrl } from '@/lib/api-config'
+import { useState, useEffect, useCallback } from "react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { 
+  RefreshCw, 
+  Eye, 
+  CheckCircle, 
+  Clock, 
+  AlertCircle,
+  XCircle,
+  Hash,
+  Smartphone,
+  Calendar,
+  DollarSign,
+  Activity,
+  Loader2
+} from "lucide-react"
+import { getApiUrl } from "@/lib/api-config"
+import { usePaybillMonitor } from "@/hooks/usePaybillMonitor"
+import { toast } from "@/hooks/use-toast"
+import { paybillApi, PaybillTransaction, PaybillTransactionSummary } from "@/lib/api"
 
 interface PaybillTransaction {
   id: number
   trans_id: string
-  trans_amount: number
   device_id: string
-  payment_type: 'down_payment' | 'installment' | 'advance_payment' | 'late_payment'
-  status: 'pending' | 'processed' | 'failed'
+  trans_amount: number
+  formatted_amount: string
+  customer_name: string
+  phone: string
+  status: 'pending' | 'validated' | 'validated_pending_confirmation' | 'processed' | 'failed' | 'rejected'
   amount_matched: boolean
   credited_to_account: boolean
-  expected_amount?: number
-  customer_full_name: string
-  formatted_phone: string
-  transaction_date: string
+  payment_type: string
   processing_notes?: string
-  appliance?: {
-    id: number
-    unit_id: string
-    installation_location: string
-  }
-  payment_order?: {
-    id: number
-    order_reference: string
-    product_name: string
-  }
-  payment_plan?: {
-    id: number
-    payment_frequency: string
-    installments_completed: number
-    total_installments: number
-  }
+  processed_at?: string
+  processed_by?: string
+  expected_amount?: number
   created_at: string
   updated_at: string
+  trans_time: string
+  business_short_code: string
+  bill_ref_number: string
+  first_name: string
+  middle_name?: string
+  last_name: string
+  msisdn: string
+  org_account_balance?: string
+  validation_details?: any
+  raw_payload?: any
 }
 
 interface PaybillTransactionSummary {
-  summary: {
-    total_transactions: number
-    total_amount: number
-    recent_transactions: number
-    recent_amount: number
-    period_days: number
-  }
-  status_breakdown: Record<string, { count: number; total_amount: number }>
-  payment_type_breakdown: Record<string, { count: number; total_amount: number }>
+  total_transactions: number
+  total_amount: number
+  formatted_total_amount: string
+  processed_transactions: number
+  processed_amount: number
+  formatted_processed_amount: string
+  pending_transactions: number
+  pending_amount: number
+  formatted_pending_amount: string
+  failed_transactions: number
+  failed_amount: number
+  formatted_failed_amount: string
   recent_transactions: PaybillTransaction[]
 }
 
 interface PaybillTransactionsProps {
-  clientId?: number
+  clientId: number
 }
 
 export function PaybillTransactions({ clientId }: PaybillTransactionsProps) {
@@ -69,6 +82,7 @@ export function PaybillTransactions({ clientId }: PaybillTransactionsProps) {
   const [selectedTransaction, setSelectedTransaction] = useState<PaybillTransaction | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [lastManualRefresh, setLastManualRefresh] = useState<Date>(new Date())
   
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('all_statuses')
@@ -81,7 +95,69 @@ export function PaybillTransactions({ clientId }: PaybillTransactionsProps) {
   const [totalPages, setTotalPages] = useState(1)
   const [perPage] = useState(10)
 
-  const fetchTransactions = async () => {
+  // Real-time monitoring
+  const {
+    isMonitoring,
+    startDashboardMonitoring,
+    stopMonitoring
+  } = usePaybillMonitor({
+    onTransactionFound: (data) => {
+      if (data.type === 'dashboard_new') {
+        console.log('🆕 New PayBill transaction detected:', data.transaction)
+        toast({
+          title: "New Payment Received! 💰",
+          description: `${data.transaction.formatted_amount} from ${data.transaction.customer_name}`,
+        })
+        
+        // Add new transaction to the list
+        setTransactions(prev => [data.transaction, ...prev])
+        
+        // Refresh summary
+        fetchSummary()
+      }
+    },
+    onTransactionSuccess: (data) => {
+      console.log('✅ PayBill transaction processed:', data.transaction)
+      toast({
+        title: "Payment Processed Successfully! ✅",
+        description: `${data.transaction.formatted_amount} has been confirmed and processed.`,
+      })
+      
+      // Update transaction in the list
+      setTransactions(prev => 
+        prev.map(t => 
+          t.id === data.transaction.id 
+            ? { ...t, ...data.transaction }
+            : t
+        )
+      )
+      
+      // Refresh summary
+      fetchSummary()
+    },
+    onTransactionFailed: (data) => {
+      console.log('❌ PayBill transaction failed:', data.transaction)
+      toast({
+        title: "Payment Issue Detected ⚠️",
+        description: data.reason || 'Payment processing encountered an issue.',
+        variant: "destructive",
+      })
+      
+      // Update transaction in the list
+      setTransactions(prev => 
+        prev.map(t => 
+          t.id === data.transaction.id 
+            ? { ...t, ...data.transaction }
+            : t
+        )
+      )
+      
+      // Refresh summary
+      fetchSummary()
+    }
+  })
+
+  const fetchTransactions = useCallback(async () => {
     try {
       setLoading(true)
       const token = localStorage.getItem('auth_token')
@@ -90,54 +166,40 @@ export function PaybillTransactions({ clientId }: PaybillTransactionsProps) {
         throw new Error('No authentication token found')
       }
 
-      const params = new URLSearchParams({
-        page: currentPage.toString(),
-        per_page: perPage.toString(),
-      })
-
-      if (statusFilter && statusFilter !== 'all_statuses') params.append('status', statusFilter)
-      if (paymentTypeFilter && paymentTypeFilter !== 'all_types') params.append('payment_type', paymentTypeFilter)
-      if (daysFilter && daysFilter !== 'all_time') params.append('days', daysFilter)
-
-      let url
-      try {
-        url = await getApiUrl(`/client/paybill-transactions?${params}`)
-      } catch (error) {
-        console.error('❌ Failed to get API URL:', error)
-        throw new Error('Failed to load API configuration. Please check your connection and try again.')
+      const params: any = {
+        page: currentPage,
+        per_page: perPage,
       }
 
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-      })
+      if (statusFilter && statusFilter !== 'all_statuses') params.status = statusFilter
+      if (paymentTypeFilter && paymentTypeFilter !== 'all_types') params.payment_type = paymentTypeFilter
+      if (daysFilter && daysFilter !== 'all_time') params.days = daysFilter
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch PayBill transactions')
-      }
-
-      const data = await response.json()
+      const response = await paybillApi.getTransactions(params, token)
       
-      if (data.success) {
-        setTransactions(data.data.transactions)
-        setTotalPages(data.data.pagination.last_page)
+      if (response.success) {
+        setTransactions(response.data.transactions)
+        setTotalPages(response.data.pagination.last_page)
         setError(null)
       } else {
-        throw new Error(data.error || 'Failed to load transactions')
+        throw new Error('Failed to load transactions')
       }
     } catch (err) {
       console.error('Error fetching PayBill transactions:', err)
-      setError(err instanceof Error ? err.message : 'Failed to load transactions')
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred'
+      setError(errorMessage)
+      
+      toast({
+        title: "Error Loading Transactions",
+        description: errorMessage,
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentPage, perPage, statusFilter, paymentTypeFilter, daysFilter])
 
-  const fetchSummary = async () => {
+  const fetchSummary = useCallback(async () => {
     try {
       const token = localStorage.getItem('auth_token')
       
@@ -145,164 +207,187 @@ export function PaybillTransactions({ clientId }: PaybillTransactionsProps) {
         return
       }
 
-      const params = new URLSearchParams()
-      if (daysFilter && daysFilter !== 'all_time') params.append('days', daysFilter)
+      const params: any = {}
+      if (daysFilter && daysFilter !== 'all_time') params.days = daysFilter
 
-      let url
-      try {
-        url = await getApiUrl(`/client/paybill-transactions/summary?${params}`)
-      } catch (error) {
-        console.error('❌ Failed to get API URL:', error)
-        return
-      }
-
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success) {
-          setSummary(data.data)
-        }
+      const response = await paybillApi.getTransactionSummary(params, token)
+      
+      if (response.success) {
+        setSummary(response.data)
       }
     } catch (err) {
       console.error('Error fetching PayBill summary:', err)
     }
-  }
+  }, [daysFilter])
 
-  const fetchTransactionDetails = async (transactionId: number) => {
+  const fetchTransactionDetail = async (transactionId: number) => {
     try {
       const token = localStorage.getItem('auth_token')
       
       if (!token) {
-        return
+        throw new Error('No authentication token found')
       }
 
-      let url
-      try {
-        url = await getApiUrl(`/client/paybill-transactions/${transactionId}`)
-      } catch (error) {
-        console.error('❌ Failed to get API URL:', error)
-        return
-      }
-
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'ngrok-skip-browser-warning': 'true',
-        },
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success) {
-          setSelectedTransaction(data.data)
-        }
+      const response = await paybillApi.getTransactionDetail(transactionId, token)
+      
+      if (response.success) {
+        setSelectedTransaction(response.data)
+      } else {
+        throw new Error('Failed to load transaction details')
       }
     } catch (err) {
       console.error('Error fetching transaction details:', err)
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred'
+      
+      toast({
+        title: "Error Loading Transaction",
+        description: errorMessage,
+        variant: "destructive",
+      })
     }
   }
 
+  // Load initial data and start real-time monitoring
   useEffect(() => {
     fetchTransactions()
     fetchSummary()
-  }, [currentPage, statusFilter, paymentTypeFilter, daysFilter])
-
-  const getStatusBadge = (status: string) => {
-    const statusConfig = {
-      pending: { text: 'Pending', variant: 'secondary' as const },
-      processed: { text: 'Processed', variant: 'default' as const },
-      failed: { text: 'Rejected', variant: 'destructive' as const },
-    }
     
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.pending
-    return <Badge variant={config.variant}>{config.text}</Badge>
+    // Start real-time monitoring for this client
+    if (clientId) {
+      console.log(`🚀 Starting real-time PayBill monitoring for client: ${clientId}`)
+      startDashboardMonitoring(clientId.toString())
+    }
+
+    // Cleanup on unmount
+    return () => {
+      stopMonitoring()
+    }
+  }, [clientId, fetchTransactions, fetchSummary, startDashboardMonitoring, stopMonitoring])
+
+  // Refresh data when filters change
+  useEffect(() => {
+    fetchTransactions()
+  }, [fetchTransactions])
+
+  useEffect(() => {
+    fetchSummary()
+  }, [fetchSummary])
+
+  const handleManualRefresh = () => {
+    setLastManualRefresh(new Date())
+    fetchTransactions()
+    fetchSummary()
+    
+    toast({
+      title: "Refreshed",
+      description: "Transaction data has been refreshed",
+    })
   }
 
-  const getPaymentTypeBadge = (paymentType: string) => {
-    const typeConfig = {
-      down_payment: { text: 'Down Payment', variant: 'default' as const },
-      installment: { text: 'Installment', variant: 'secondary' as const },
-      advance_payment: { text: 'Advance Payment', variant: 'outline' as const },
-      late_payment: { text: 'Late Payment', variant: 'destructive' as const },
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'processed':
+        return <Badge variant="default" className="bg-green-100 text-green-800"><CheckCircle className="h-3 w-3 mr-1" />Processed</Badge>
+      case 'pending':
+        return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800"><Clock className="h-3 w-3 mr-1" />Pending</Badge>
+      case 'validated':
+        return <Badge variant="secondary" className="bg-blue-100 text-blue-800"><Clock className="h-3 w-3 mr-1" />Validated</Badge>
+      case 'validated_pending_confirmation':
+        return <Badge variant="secondary" className="bg-blue-100 text-blue-800"><Clock className="h-3 w-3 mr-1" />Confirming</Badge>
+      case 'failed':
+        return <Badge variant="destructive" className="bg-red-100 text-red-800"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>
+      case 'rejected':
+        return <Badge variant="destructive" className="bg-red-100 text-red-800"><AlertCircle className="h-3 w-3 mr-1" />Rejected</Badge>
+      default:
+        return <Badge variant="outline">{status}</Badge>
     }
-    
-    const config = typeConfig[paymentType as keyof typeof typeConfig] || typeConfig.installment
-    return <Badge variant={config.variant}>{config.text}</Badge>
+  }
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString('en-KE', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
   }
 
   const filteredTransactions = transactions.filter(transaction => {
-    if (!searchQuery) return true
-    const searchLower = searchQuery.toLowerCase()
-    return (
-      transaction.trans_id.toLowerCase().includes(searchLower) ||
-      transaction.device_id.toLowerCase().includes(searchLower) ||
-      transaction.customer_full_name.toLowerCase().includes(searchLower)
-    )
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase()
+      return (
+        transaction.trans_id.toLowerCase().includes(query) ||
+        transaction.device_id.toLowerCase().includes(query) ||
+        transaction.customer_name.toLowerCase().includes(query) ||
+        transaction.phone.includes(query)
+      )
+    }
+    return true
   })
 
   if (loading && transactions.length === 0) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center">
-            <CreditCard className="mr-2 h-5 w-5" />
-            PayBill Transactions
+          <CardTitle className="flex items-center gap-2">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            Loading PayBill Transactions...
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-center p-8">
-            <RefreshCw className="h-6 w-6 animate-spin mr-2" />
-            Loading transactions...
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  if (error) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <CreditCard className="mr-2 h-5 w-5" />
-            PayBill Transactions
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center p-8">
-            <p className="text-red-600 mb-4">{error}</p>
-            <Button onClick={fetchTransactions} variant="outline">
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Retry
-            </Button>
-          </div>
-        </CardContent>
       </Card>
     )
   }
 
   return (
     <div className="space-y-6">
+      {/* Header with Real-time Status */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+            <Hash className="h-5 w-5 text-emerald-600" />
+            PayBill Transactions
+            {isMonitoring && (
+              <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                <Activity className="h-3 w-3 mr-1 animate-pulse" />
+                Live Monitoring
+              </Badge>
+            )}
+          </h2>
+          <p className="text-sm text-gray-600">Your PayBill payment history and transaction details</p>
+        </div>
+        <Button 
+          variant="outline" 
+          onClick={handleManualRefresh}
+          disabled={loading}
+          size="sm"
+        >
+          <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
+      </div>
+
+      {error && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2 text-red-800">
+              <AlertCircle className="h-4 w-4" />
+              <span className="text-sm">{error}</span>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="p-4">
-              <div className="flex items-center">
-                <Wallet className="h-8 w-8 text-blue-600" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Total Transactions</p>
-                  <p className="text-2xl font-bold">{summary.summary.total_transactions}</p>
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-8 w-8 text-emerald-600" />
+                <div>
+                  <p className="text-sm text-gray-600">Total Amount</p>
+                  <p className="text-lg font-semibold">{summary.formatted_total_amount}</p>
                 </div>
               </div>
             </CardContent>
@@ -310,11 +395,12 @@ export function PaybillTransactions({ clientId }: PaybillTransactionsProps) {
           
           <Card>
             <CardContent className="p-4">
-              <div className="flex items-center">
-                <CreditCard className="h-8 w-8 text-green-600" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Total Amount</p>
-                  <p className="text-2xl font-bold">{formatCurrency(summary.summary.total_amount)}</p>
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-8 w-8 text-green-600" />
+                <div>
+                  <p className="text-sm text-gray-600">Processed</p>
+                  <p className="text-lg font-semibold">{summary.processed_transactions}</p>
+                  <p className="text-xs text-gray-500">{summary.formatted_processed_amount}</p>
                 </div>
               </div>
             </CardContent>
@@ -322,11 +408,12 @@ export function PaybillTransactions({ clientId }: PaybillTransactionsProps) {
           
           <Card>
             <CardContent className="p-4">
-              <div className="flex items-center">
-                <Calendar className="h-8 w-8 text-purple-600" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Recent ({summary.summary.period_days} days)</p>
-                  <p className="text-2xl font-bold">{summary.summary.recent_transactions}</p>
+              <div className="flex items-center gap-2">
+                <Clock className="h-8 w-8 text-yellow-600" />
+                <div>
+                  <p className="text-sm text-gray-600">Pending</p>
+                  <p className="text-lg font-semibold">{summary.pending_transactions}</p>
+                  <p className="text-xs text-gray-500">{summary.formatted_pending_amount}</p>
                 </div>
               </div>
             </CardContent>
@@ -334,11 +421,12 @@ export function PaybillTransactions({ clientId }: PaybillTransactionsProps) {
           
           <Card>
             <CardContent className="p-4">
-              <div className="flex items-center">
-                <Wallet className="h-8 w-8 text-orange-600" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Recent Amount</p>
-                  <p className="text-2xl font-bold">{formatCurrency(summary.summary.recent_amount)}</p>
+              <div className="flex items-center gap-2">
+                <XCircle className="h-8 w-8 text-red-600" />
+                <div>
+                  <p className="text-sm text-gray-600">Failed</p>
+                  <p className="text-lg font-semibold">{summary.failed_transactions}</p>
+                  <p className="text-xs text-gray-500">{summary.formatted_failed_amount}</p>
                 </div>
               </div>
             </CardContent>
@@ -346,63 +434,43 @@ export function PaybillTransactions({ clientId }: PaybillTransactionsProps) {
         </div>
       )}
 
-      {/* Filters and Search */}
+      {/* Filters */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Filter className="mr-2 h-5 w-5" />
-            Filters
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <CardContent className="p-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
-              <Label htmlFor="search">Search</Label>
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
-                <Input
-                  id="search"
-                  placeholder="Transaction ID, Device ID..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
-            
-            <div>
-              <Label htmlFor="status-filter">Status</Label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Status</label>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger>
-                  <SelectValue placeholder="All statuses" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all_statuses">All statuses</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="all_statuses">All Statuses</SelectItem>
                   <SelectItem value="processed">Processed</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="validated">Validated</SelectItem>
                   <SelectItem value="failed">Failed</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             
             <div>
-              <Label htmlFor="payment-type-filter">Payment Type</Label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Payment Type</label>
               <Select value={paymentTypeFilter} onValueChange={setPaymentTypeFilter}>
                 <SelectTrigger>
-                  <SelectValue placeholder="All types" />
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all_types">All types</SelectItem>
+                  <SelectItem value="all_types">All Types</SelectItem>
                   <SelectItem value="down_payment">Down Payment</SelectItem>
                   <SelectItem value="installment">Installment</SelectItem>
-                  <SelectItem value="advance_payment">Advance Payment</SelectItem>
-                  <SelectItem value="late_payment">Late Payment</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             
             <div>
-              <Label htmlFor="days-filter">Period</Label>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Time Period</label>
               <Select value={daysFilter} onValueChange={setDaysFilter}>
                 <SelectTrigger>
                   <SelectValue />
@@ -415,244 +483,186 @@ export function PaybillTransactions({ clientId }: PaybillTransactionsProps) {
                 </SelectContent>
               </Select>
             </div>
+            
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Search</label>
+              <Input
+                placeholder="Search transactions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Transactions List */}
+      {/* Transactions Table */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span className="flex items-center">
-              <CreditCard className="mr-2 h-5 w-5" />
-              PayBill Transactions
-            </span>
-            <Button onClick={fetchTransactions} variant="outline" size="sm">
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh
-            </Button>
+          <CardTitle className="flex items-center gap-2">
+            <Smartphone className="h-5 w-5" />
+            PayBill Transactions
+            {isMonitoring && (
+              <span className="text-sm font-normal text-green-600">(Live updates enabled)</span>
+            )}
           </CardTitle>
-          <CardDescription>
-            Your PayBill payment history and transaction details
-          </CardDescription>
         </CardHeader>
         <CardContent>
           {filteredTransactions.length === 0 ? (
-            <div className="text-center p-8">
-              <CreditCard className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <div className="text-center py-8">
+              <Hash className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <p className="text-gray-600">No PayBill transactions found</p>
-              <p className="text-sm text-gray-500 mt-2">
+              <p className="text-sm text-gray-500 mt-1">
                 Transactions will appear here after you make PayBill payments
               </p>
             </div>
           ) : (
-            <div className="space-y-4">
-              {filteredTransactions.map((transaction) => (
-                <div
-                  key={transaction.id}
-                  className="border rounded-lg p-4 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-2">
-                        <h3 className="font-semibold">{transaction.trans_id}</h3>
-                        {getStatusBadge(transaction.status)}
-                        {getPaymentTypeBadge(transaction.payment_type)}
-                        {transaction.amount_matched && (
-                          <Badge variant="outline" className="text-green-600">
-                            Amount Matched
-                          </Badge>
-                        )}
-                      </div>
-                      
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-gray-600">
-                        <div>
-                          <p className="font-medium">Amount</p>
-                          <p className="text-lg font-bold text-gray-900">
-                            {formatCurrency(transaction.trans_amount)}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="font-medium">Device</p>
-                          <p>{transaction.device_id}</p>
-                        </div>
-                        <div>
-                          <p className="font-medium">Date</p>
-                          <p>{formatDate(transaction.created_at)}</p>
-                        </div>
-                        <div>
-                          <p className="font-medium">Customer</p>
-                          <p>{transaction.customer_full_name}</p>
-                        </div>
-                      </div>
-                      
-                      {transaction.expected_amount && (
-                        <div className="mt-2 text-sm">
-                          <span className="text-gray-600">Expected: </span>
-                          <span className="font-medium">
-                            {formatCurrency(transaction.expected_amount)}
-                          </span>
-                        </div>
-                      )}
-                      
-                      {transaction.status === 'failed' && transaction.processing_notes && (
-                        <div className="mt-2 text-sm">
-                          <div className="bg-red-50 border border-red-200 rounded-md p-2">
-                            <p className="text-red-700 font-medium text-xs">Rejection Reason:</p>
-                            <p className="text-red-600 text-xs">{transaction.processing_notes}</p>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b text-left">
+                    <th className="py-3 px-4 font-medium text-gray-700">Transaction ID</th>
+                    <th className="py-3 px-4 font-medium text-gray-700">Device ID</th>
+                    <th className="py-3 px-4 font-medium text-gray-700">Amount</th>
+                    <th className="py-3 px-4 font-medium text-gray-700">Customer</th>
+                    <th className="py-3 px-4 font-medium text-gray-700">Status</th>
+                    <th className="py-3 px-4 font-medium text-gray-700">Date</th>
+                    <th className="py-3 px-4 font-medium text-gray-700">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTransactions.map((transaction) => (
+                    <tr key={transaction.id} className="border-b hover:bg-gray-50">
+                      <td className="py-3 px-4">
+                        <span className="font-mono text-sm">{transaction.trans_id}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-mono text-sm">{transaction.device_id}</span>
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className="font-semibold">{transaction.formatted_amount}</span>
+                        {transaction.amount_matched === false && (
+                          <div className="text-xs text-amber-600">
+                            Expected: KSh {transaction.expected_amount?.toLocaleString() || 'N/A'}
                           </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div>
+                          <p className="font-medium">{transaction.customer_name}</p>
+                          <p className="text-sm text-gray-600">{transaction.phone}</p>
                         </div>
-                      )}
-                      
-                      {transaction.status === 'failed' && !transaction.amount_matched && transaction.expected_amount && (
-                        <div className="mt-1 text-xs text-red-600">
-                          Amount mismatch: Received {formatCurrency(transaction.trans_amount)}, Expected {formatCurrency(transaction.expected_amount)}
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="flex items-center space-x-2">
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => fetchTransactionDetails(transaction.id)}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            View Details
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-2xl">
-                          <DialogHeader>
-                            <DialogTitle>Transaction Details</DialogTitle>
-                            <DialogDescription>
-                              PayBill transaction {transaction.trans_id}
-                            </DialogDescription>
-                          </DialogHeader>
-                          
-                          {selectedTransaction && (
-                            <div className="space-y-4">
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <h4 className="font-semibold mb-2">Transaction Info</h4>
-                                  <div className="space-y-1 text-sm">
-                                    <p><span className="font-medium">ID:</span> {selectedTransaction.trans_id}</p>
-                                    <p><span className="font-medium">Amount:</span> {formatCurrency(selectedTransaction.trans_amount)}</p>
-                                    <p><span className="font-medium">Status:</span> {selectedTransaction.status}</p>
-                                    <p><span className="font-medium">Type:</span> {selectedTransaction.payment_type}</p>
-                                    <p><span className="font-medium">Date:</span> {formatDate(selectedTransaction.created_at)}</p>
-                                  </div>
-                                </div>
-                                
-                                <div>
-                                  <h4 className="font-semibold mb-2">Customer Info</h4>
-                                  <div className="space-y-1 text-sm">
-                                    <p><span className="font-medium">Name:</span> {selectedTransaction.customer_full_name}</p>
-                                    <p><span className="font-medium">Phone:</span> {selectedTransaction.formatted_phone}</p>
-                                    <p><span className="font-medium">Device:</span> {selectedTransaction.device_id}</p>
-                                  </div>
-                                </div>
-                              </div>
-                              
-                              {selectedTransaction.appliance && (
-                                <div>
-                                  <h4 className="font-semibold mb-2">Appliance Info</h4>
-                                  <div className="text-sm">
-                                    <p><span className="font-medium">Unit ID:</span> {selectedTransaction.appliance.unit_id}</p>
-                                    <p><span className="font-medium">Location:</span> {selectedTransaction.appliance.installation_location}</p>
-                                  </div>
-                                </div>
-                              )}
-                              
-                              {selectedTransaction.payment_plan && (
-                                <div>
-                                  <h4 className="font-semibold mb-2">Payment Plan</h4>
-                                  <div className="text-sm">
-                                    <p><span className="font-medium">Frequency:</span> {selectedTransaction.payment_plan.payment_frequency}</p>
-                                    <p><span className="font-medium">Progress:</span> {selectedTransaction.payment_plan.installments_completed} / {selectedTransaction.payment_plan.total_installments} installments</p>
-                                  </div>
-                                </div>
-                              )}
-                              
-                              {selectedTransaction.status === 'failed' && (
-                                <div>
-                                  <h4 className="font-semibold mb-2 text-red-700">Rejection Details</h4>
-                                  <div className="bg-red-50 border border-red-200 rounded-md p-3 space-y-2">
-                                    <div className="text-sm">
-                                      <span className="font-medium text-red-700">Status:</span>
-                                      <span className="ml-2 px-2 py-1 bg-red-100 text-red-800 rounded text-xs">REJECTED</span>
-                                    </div>
-                                    {selectedTransaction.processing_notes && (
-                                      <div className="text-sm">
-                                        <span className="font-medium text-red-700">Reason:</span>
-                                        <p className="mt-1 text-red-600">{selectedTransaction.processing_notes}</p>
-                                      </div>
-                                    )}
-                                    {selectedTransaction.expected_amount && (
-                                      <div className="text-sm">
-                                        <span className="font-medium text-red-700">Amount Details:</span>
-                                        <div className="mt-1 space-y-1 text-red-600">
-                                          <p>• Received: {formatCurrency(selectedTransaction.trans_amount)}</p>
-                                          <p>• Expected: {formatCurrency(selectedTransaction.expected_amount)}</p>
-                                          <p>• Difference: {formatCurrency(Math.abs(selectedTransaction.trans_amount - selectedTransaction.expected_amount))}</p>
-                                        </div>
-                                      </div>
-                                    )}
-                                    <div className="text-xs text-red-500 mt-2 p-2 bg-red-100 rounded">
-                                      💡 <strong>Next Steps:</strong> Please retry payment with the exact expected amount shown above.
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                              
-                              {selectedTransaction.processing_notes && selectedTransaction.status !== 'failed' && (
-                                <div>
-                                  <h4 className="font-semibold mb-2">Notes</h4>
-                                  <p className="text-sm bg-gray-50 p-3 rounded">
-                                    {selectedTransaction.processing_notes}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        {getStatusBadge(transaction.status)}
+                        {transaction.processing_notes && (
+                          <div className="text-xs text-gray-600 mt-1 max-w-xs truncate">
+                            {transaction.processing_notes}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="text-sm">
+                          <p>{formatDate(transaction.created_at)}</p>
+                          {transaction.processed_at && (
+                            <p className="text-xs text-gray-600">
+                              Processed: {formatDate(transaction.processed_at)}
+                            </p>
                           )}
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-6">
-              <div className="text-sm text-gray-600">
-                Page {currentPage} of {totalPages}
-              </div>
-              <div className="flex space-x-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  Next
-                </Button>
-              </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fetchTransactionDetail(transaction.id)}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          View
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Transaction Detail Modal */}
+      <Dialog open={!!selectedTransaction} onOpenChange={() => setSelectedTransaction(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Hash className="h-5 w-5" />
+              PayBill transaction {selectedTransaction?.trans_id}
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedTransaction && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <label className="font-medium text-gray-700">Transaction ID</label>
+                  <p className="font-mono">{selectedTransaction.trans_id}</p>
+                </div>
+                <div>
+                  <label className="font-medium text-gray-700">Device ID</label>
+                  <p className="font-mono">{selectedTransaction.device_id}</p>
+                </div>
+                <div>
+                  <label className="font-medium text-gray-700">Amount</label>
+                  <p className="font-semibold text-lg">{selectedTransaction.formatted_amount}</p>
+                  {selectedTransaction.expected_amount && (
+                    <p className="text-xs text-gray-600">Expected: KSh {selectedTransaction.expected_amount.toLocaleString()}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="font-medium text-gray-700">Status</label>
+                  <div>{getStatusBadge(selectedTransaction.status)}</div>
+                </div>
+                <div>
+                  <label className="font-medium text-gray-700">Customer</label>
+                  <p>{selectedTransaction.customer_name}</p>
+                  <p className="text-xs text-gray-600">{selectedTransaction.phone}</p>
+                </div>
+                <div>
+                  <label className="font-medium text-gray-700">Payment Type</label>
+                  <p className="capitalize">{selectedTransaction.payment_type.replace('_', ' ')}</p>
+                </div>
+                <div>
+                  <label className="font-medium text-gray-700">Created</label>
+                  <p>{formatDate(selectedTransaction.created_at)}</p>
+                </div>
+                <div>
+                  <label className="font-medium text-gray-700">Processed</label>
+                  <p>{selectedTransaction.processed_at ? formatDate(selectedTransaction.processed_at) : 'Not processed'}</p>
+                  {selectedTransaction.processed_by && (
+                    <p className="text-xs text-gray-600">By: {selectedTransaction.processed_by}</p>
+                  )}
+                </div>
+              </div>
+              
+              {selectedTransaction.processing_notes && (
+                <div>
+                  <label className="font-medium text-gray-700">Processing Notes</label>
+                  <p className="text-sm bg-gray-50 p-2 rounded">{selectedTransaction.processing_notes}</p>
+                </div>
+              )}
+              
+              {selectedTransaction.validation_details && (
+                <div>
+                  <label className="font-medium text-gray-700">Validation Details</label>
+                  <pre className="text-xs bg-gray-50 p-2 rounded overflow-x-auto">
+                    {JSON.stringify(selectedTransaction.validation_details, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 } 

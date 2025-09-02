@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // Handle CORS and force JSON responses for API routes
         $middleware->api(prepend: [
             \App\Http\Middleware\ForceJsonResponse::class,
+            \App\Http\Middleware\CorsDebugger::class,
             \Illuminate\Http\Middleware\HandleCors::class,
         ]);
         

@@ -8,8 +8,8 @@ use Illuminate\Http\Response;
 use Carbon\Carbon;
 use App\Models\MpesaTransaction;
 use App\Models\PaymentOrder;
-use App\Models\SystemSetting;
-use Illuminate\Support\Facades\Log;
+  use App\Models\SystemSetting;
+  use Illuminate\Support\Facades\Log;
 
 class MpesaController extends Controller
 {
@@ -166,92 +166,10 @@ class MpesaController extends Controller
         ]);
     }
 
-    /**
-     * 3. Register Confirmation & Validation URLs
-     */
-    public function mpesaRegisterUrls()
-    {
-        $config = SystemSetting::getMpesaConfig();
-        $token = $this->generateAccessToken();
 
-        $url = $config['environment'] === 'production'
-             ? 'https://api.safaricom.co.ke/mpesa/c2b/v1/registerurl'
-             : 'https://sandbox.safaricom.co.ke/mpesa/c2b/v1/registerurl';
-
-        $payload = [
-            'ShortCode'       => $config['shortcode'],
-            'ResponseType'    => 'Completed',
-            'ConfirmationURL' => $config['confirmation_url'],
-            'ValidationURL'   => $config['validation_url'],
-        ];
-
-        $curl = curl_init($url);
-        curl_setopt_array($curl, [
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/json',
-                "Authorization: Bearer {$token}"
-            ],
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => json_encode($payload),
-        ]);
-
-        $resp = curl_exec($curl);
-        curl_close($curl);
-
-        return response($resp);
-    }
 
     /**
-     * 4. Validation endpoint (called by Safaricom)
-     * Handles M-Pesa C2B validation requests before payment completion
-     */
-    public function mpesaValidation(Request $request)
-    {
-        Log::info('🔍 M-Pesa Validation Request:', $request->all());
-        
-        // Use the comprehensive validation service
-        $validationService = new \App\Services\MpesaValidationService();
-        $validationResult = $validationService->validateTransaction($request->all());
-        
-        // Log the validation result
-        if ($validationResult['ResultCode'] === '0') {
-            Log::info('✅ M-Pesa Validation ACCEPTED via Service:', [
-                'transaction_id' => $request->input('TransID'),
-                'device_id' => $request->input('BillRefNumber'),
-                'amount' => $request->input('TransAmount'),
-                'result' => $validationResult
-            ]);
-        } else {
-            Log::warning('❌ M-Pesa Validation REJECTED via Service:', [
-                'transaction_id' => $request->input('TransID'),
-                'device_id' => $request->input('BillRefNumber'),
-                'amount' => $request->input('TransAmount'),
-                'result' => $validationResult
-            ]);
-        }
-        
-        return response()->json($validationResult);
-    }
-
-    /**
-     * 5. Confirmation endpoint (called by Safaricom)
-     */
-    public function mpesaConfirmation(Request $request)
-    {
-        // Log the confirmation data
-        Log::info('M-Pesa Confirmation Request:', $request->all());
-        
-        // TODO: persist $request->all() into your database or perform business logic
-        // You can process C2B payments here
-        
-        return response()->json([
-            'ResultDesc' => 'Accepted confirmation.'
-        ]);
-    }
-
-    /**
-     * 6. STK Push - Initiate Lipa-na-M-Pesa Online Payment
+     * 3. STK Push - Initiate Lipa-na-M-Pesa Online Payment
      */
     public function stkPush(Request $request)
     {
@@ -417,7 +335,7 @@ class MpesaController extends Controller
     }
 
     /**
-     * 7. STK Push Callback - Handle payment notifications
+     * 4. STK Push Callback - Handle payment notifications
      */
     public function stkCallback(Request $request)
     {
@@ -525,7 +443,7 @@ class MpesaController extends Controller
     }
 
     /**
-     * 8. Query STK Push Status
+     * 5. Query STK Push Status
      */
     public function stkQuery(Request $request)
     {
@@ -730,6 +648,10 @@ class MpesaController extends Controller
             ], 400);
         }
     }
+
+    // PayBill business info and status checking moved to existing infrastructure
+    // Business info: config/mpesa.php -> business_info
+    // Status checking: via existing paybill-transactions endpoints
 
     /**
      * Helper: Format phone number for M-Pesa (254XXXXXXXXX)
@@ -941,12 +863,149 @@ class MpesaController extends Controller
                     'mpesa_receipt' => $transaction->mpesa_receipt_number
                 ]);
 
+                // ✅ 1. Generate Receipt
+                $receiptService = app(\App\Services\ReceiptService::class);
+                $receiptResult = $receiptService->generatePaymentReceipt($paymentOrder, $transaction);
+                
+                if ($receiptResult['success']) {
+                    Log::info('Receipt generated successfully:', [
+                        'receipt_number' => $receiptResult['receipt_number'],
+                        'order_reference' => $paymentOrder->order_reference
+                    ]);
+                }
+
+                // ✅ 2. Send SMS Confirmation to Customer
+                $smsService = app(\App\Services\SmsService::class);
+                if ($smsService->isConfigured()) {
+                    // Send payment confirmation SMS
+                    $paymentData = [
+                        'amount' => $paymentOrder->paid_amount,
+                        'receipt_number' => $receiptResult['receipt_number'] ?? 'N/A',
+                        'product_name' => $paymentOrder->product_name,
+                        'mpesa_receipt' => $transaction->mpesa_receipt_number
+                    ];
+                    
+                    $smsResult = $smsService->sendPaymentConfirmation(
+                        $paymentOrder->customer_phone, 
+                        $paymentData
+                    );
+                    
+                    if ($smsResult['success']) {
+                        Log::info('Payment confirmation SMS sent successfully:', [
+                            'phone' => $paymentOrder->customer_phone,
+                            'message_id' => $smsResult['message_id'] ?? null
+                        ]);
+                    } else {
+                        Log::warning('Failed to send payment confirmation SMS:', [
+                            'phone' => $paymentOrder->customer_phone,
+                            'error' => $smsResult['error'] ?? 'Unknown error'
+                        ]);
+                    }
+
+                    // Send receipt SMS
+                    if ($receiptResult['success']) {
+                        $receiptData = $receiptService->generateSmsReceiptData(
+                            $paymentOrder, 
+                            $transaction, 
+                            $receiptResult['receipt_number']
+                        );
+                        
+                        $receiptSmsResult = $smsService->sendPaymentReceipt(
+                            $paymentOrder->customer_phone, 
+                            $receiptData
+                        );
+                        
+                        if ($receiptSmsResult['success']) {
+                            Log::info('Receipt SMS sent successfully:', [
+                                'phone' => $paymentOrder->customer_phone,
+                                'receipt_number' => $receiptResult['receipt_number']
+                            ]);
+                        }
+                    }
+                } else {
+                    Log::warning('SMS service not configured, skipping SMS notifications');
+                }
+
+                // ✅ 3. Activate PayGo Plan (for down payments)
+                $planActivationService = app(\App\Services\PayGoPlanActivationService::class);
+                $planResult = $planActivationService->activatePlan($paymentOrder);
+                
+                if ($planResult['success']) {
+                    Log::info('PayGo plan activated successfully:', [
+                        'plan_id' => $planResult['payment_plan']->id,
+                        'client_id' => $planResult['client']->id,
+                        'order_reference' => $paymentOrder->order_reference
+                    ]);
+
+                    // Send plan activation SMS
+                    if ($smsService->isConfigured()) {
+                        $product = \App\Models\Product::find($paymentOrder->product_id);
+                        if ($product) {
+                            $planData = $planActivationService->generatePlanActivationData(
+                                $planResult['payment_plan'], 
+                                $product
+                            );
+                            
+                            $planSmsResult = $smsService->sendPlanActivation(
+                                $paymentOrder->customer_phone, 
+                                $planData
+                            );
+                            
+                            if ($planSmsResult['success']) {
+                                Log::info('Plan activation SMS sent successfully:', [
+                                    'phone' => $paymentOrder->customer_phone,
+                                    'plan_id' => $planResult['payment_plan']->id
+                                ]);
+                            }
+                        }
+                    }
+                } else {
+                    Log::warning('PayGo plan activation failed or not applicable:', [
+                        'order_reference' => $paymentOrder->order_reference,
+                        'error' => $planResult['error'] ?? $planResult['message'] ?? 'Unknown error'
+                    ]);
+                }
+
+                // ✅ 4. Trigger subscription management and IoT device activation
+                $subscriptionService = app(\App\Services\SubscriptionManagementService::class);
+                
+                // Create payment record for subscription service
+                $payment = \App\Models\Payment::create([
+                    'client_id' => $planResult['client']->id ?? null,
+                    'payment_plan_id' => $planResult['payment_plan']->id ?? null,
+                    'amount' => $paymentOrder->paid_amount,
+                    'payment_type' => $paymentOrder->payment_type,
+                    'payment_method' => 'mpesa_stk',
+                    'payment_date' => $transaction->transaction_date ?? now(),
+                    'status' => 'completed',
+                    'mpesa_receipt_number' => $transaction->mpesa_receipt_number,
+                    'customer_phone' => $paymentOrder->customer_phone,
+                    'customer_email' => $paymentOrder->customer_email,
+                    'customer_name' => $paymentOrder->customer_name,
+                    'product_id' => $paymentOrder->product_id,
+                    'product_price' => $paymentOrder->product_price,
+                    'plan_type' => $paymentOrder->plan_type,
+                    'installment_amount' => $paymentOrder->installment_amount,
+                ]);
+
+                $subscriptionResult = $subscriptionService->handlePaymentSuccess($payment);
+                
+                if ($subscriptionResult && $subscriptionResult['success']) {
+                    Log::info('Subscription management completed successfully:', [
+                        'subscription_id' => $subscriptionResult['subscription']->id,
+                        'device_id' => $subscriptionResult['appliance']->device_id,
+                        'payment_id' => $payment->id
+                    ]);
+                } else {
+                    Log::warning('Subscription management failed:', [
+                        'payment_id' => $payment->id,
+                        'order_reference' => $paymentOrder->order_reference
+                    ]);
+                }
+
                 // TODO: Additional business logic
-                // 1. Trigger IoT device activation if needed
-                // 2. Send SMS confirmation to customer
-                // 3. Send email receipt
-                // 4. Create delivery order
-                // 5. Update inventory
+                // 5. Create delivery order
+                // 6. Update inventory
                 
             } else {
                 Log::warning('No payment order found for successful transaction:', [
@@ -959,7 +1018,8 @@ class MpesaController extends Controller
             Log::error('Error processing successful payment:', [
                 'transaction_id' => $transaction->id,
                 'checkout_request_id' => $transaction->checkout_request_id,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
         }
     }

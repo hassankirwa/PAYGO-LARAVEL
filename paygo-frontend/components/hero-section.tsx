@@ -56,23 +56,47 @@ export default function HeroSection() {
   }
 
   const getUserInitials = (user: AuthUser) => {
+    // Check for first_name and last_name
     if (user.first_name && user.last_name) {
       return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase()
     }
-    if (user.name) {
-      const nameParts = user.name.split(' ')
-      return nameParts.length > 1 
-        ? `${nameParts[0][0]}${nameParts[1][0]}`.toUpperCase()
-        : nameParts[0][0].toUpperCase()
+    
+    // Check for full name
+    if (user.name && user.name.length > 0) {
+      const nameParts = user.name.split(' ').filter(part => part.length > 0)
+      if (nameParts.length > 1) {
+        return `${nameParts[0][0]}${nameParts[1][0]}`.toUpperCase()
+      }
+      return nameParts[0][0].toUpperCase()
     }
-    return user.email[0].toUpperCase()
+    
+    // Check for email as fallback
+    if (user.email && user.email.length > 0) {
+      return user.email[0].toUpperCase()
+    }
+    
+    // Final fallback if all else fails
+    return 'U'
   }
 
   const getUserDisplayName = (user: AuthUser) => {
+    // Check for first_name and last_name
     if (user.first_name && user.last_name) {
       return `${user.first_name} ${user.last_name}`
     }
-    return user.name || user.email
+    
+    // Check for full name
+    if (user.name && user.name.length > 0) {
+      return user.name
+    }
+    
+    // Check for email as fallback
+    if (user.email && user.email.length > 0) {
+      return user.email
+    }
+    
+    // Final fallback
+    return 'Unknown User'
   }
 
   const getDashboardLink = () => {
@@ -126,7 +150,7 @@ export default function HeroSection() {
                     <p className="text-sm font-medium text-white">
                       {getUserDisplayName(user)}
                     </p>
-                    <p className="text-xs text-white/70 capitalize">{user.user_type}</p>
+                    <p className="text-xs text-white/70 capitalize">{user.user_type || 'user'}</p>
                   </div>
                 </Button>
               </DropdownMenuTrigger>

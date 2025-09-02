@@ -107,6 +107,10 @@ class SystemSetting extends Model
             'callback_url' => $settings['callback_url'] ?? env('STK_CALLBACK_URL'),
             'confirmation_url' => $settings['confirmation_url'] ?? env('CONFIRMATION_URL'),
             'validation_url' => $settings['validation_url'] ?? env('VALIDATION_URL'),
+            // PayBill specific URLs
+            'paybill_validation_url' => $settings['paybill_validation_url'] ?? null,
+            'paybill_confirmation_url' => $settings['paybill_confirmation_url'] ?? null,
+            'paybill_response_type' => $settings['paybill_response_type'] ?? 'Completed',
         ];
     }
 
