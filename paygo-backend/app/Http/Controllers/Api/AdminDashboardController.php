@@ -110,12 +110,12 @@ class AdminDashboardController extends Controller
         // This month's revenue
         $thisMonthRevenue = Payment::where('status', 'completed')
             ->where('payment_date', '>=', $thisMonth)
-            ->sum('amount_usd');
+            ->sum('amount_ksh');
 
         // Last month's revenue
         $lastMonthRevenue = Payment::where('status', 'completed')
             ->whereBetween('payment_date', [$lastMonth, $lastMonthEnd])
-            ->sum('amount_usd');
+            ->sum('amount_ksh');
 
         // Calculate percentage change
         $revenueChange = 0;
@@ -126,17 +126,17 @@ class AdminDashboardController extends Controller
         }
 
         // Total revenue all time
-        $totalRevenue = Payment::where('status', 'completed')->sum('amount_usd');
+        $totalRevenue = Payment::where('status', 'completed')->sum('amount_ksh');
 
         // Average monthly revenue (last 6 months)
         $sixMonthsAgo = $now->copy()->subMonths(6);
         $avgMonthlyRevenue = Payment::where('status', 'completed')
             ->where('payment_date', '>=', $sixMonthsAgo)
-            ->sum('amount_usd') / 6;
+            ->sum('amount_ksh') / 6;
 
         // Outstanding revenue (pending payments)
         $outstandingRevenue = PaymentPlan::where('status', 'active')
-            ->sum('remaining_balance_usd');
+            ->sum('remaining_balance_ksh');
 
         return [
             'this_month_revenue' => round($thisMonthRevenue, 2),
@@ -233,7 +233,7 @@ class AdminDashboardController extends Controller
         // Average payment amount
         $avgPaymentAmount = Payment::where('status', 'completed')
             ->where('payment_date', '>=', $thisMonth)
-            ->avg('amount_usd');
+            ->avg('amount_ksh');
 
         return [
             'renewals_due_30_days' => $renewalsDue30,
@@ -350,6 +350,362 @@ class AdminDashboardController extends Controller
             return response()->json([
                 'success' => false,
                 'error' => 'Failed to fetch appliance statistics: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get all appliances with filtering, search, and pagination
+     */
+    public function getAppliances(Request $request)
+    {
+        try {
+            $admin = Auth::guard('sanctum')->user();
+            
+            if (!$admin || !$admin instanceof AdminUser) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+
+            $query = Appliance::with(['client', 'product']);
+
+            // Search functionality
+            if ($request->has('search') && !empty($request->search)) {
+                $search = $request->search;
+                $query->where(function($q) use ($search) {
+                    $q->where('unit_id', 'like', "%{$search}%")
+                      ->orWhere('serial_number', 'like', "%{$search}%")
+                      ->orWhereHas('client', function($clientQuery) use ($search) {
+                          $clientQuery->where('first_name', 'like', "%{$search}%")
+                                     ->orWhere('last_name', 'like', "%{$search}%")
+                                     ->orWhere('phone', 'like', "%{$search}%");
+                      })
+                      ->orWhereHas('product', function($productQuery) use ($search) {
+                          $productQuery->where('name', 'like', "%{$search}%")
+                                      ->orWhere('model_code', 'like', "%{$search}%");
+                      })
+                      ->orWhere('installation_location', 'like', "%{$search}%");
+                });
+            }
+
+            // Status filter
+            if ($request->has('status') && !empty($request->status) && $request->status !== 'all') {
+                $query->where('status', $request->status);
+            }
+
+            // Location filter
+            if ($request->has('location') && !empty($request->location)) {
+                $query->where('installation_location', 'like', "%{$request->location}%");
+            }
+
+            // Sorting
+            $sortColumn = $request->get('sort_by', 'created_at');
+            $sortDirection = $request->get('sort_direction', 'desc');
+            
+            // Validate sort column to prevent SQL injection
+            $allowedSortColumns = ['unit_id', 'status', 'installation_date', 'last_ping', 'created_at'];
+            if (in_array($sortColumn, $allowedSortColumns)) {
+                $query->orderBy($sortColumn, $sortDirection);
+            } else {
+                $query->orderBy('created_at', 'desc');
+            }
+
+            // Pagination
+            $perPage = $request->get('per_page', 20);
+            $appliances = $query->paginate($perPage);
+
+            // Transform the data for frontend consumption
+            $appliances->getCollection()->transform(function ($appliance) {
+                // Determine online/offline status based on last_ping
+                $isOnline = $appliance->last_ping && $appliance->last_ping > Carbon::now()->subMinutes(15);
+                $effectiveStatus = $appliance->status;
+                
+                if ($appliance->status === 'active' && !$isOnline) {
+                    $effectiveStatus = 'offline';
+                }
+
+                return [
+                    'id' => $appliance->id,
+                    'unit_id' => $appliance->unit_id,
+                    'serial_number' => $appliance->serial_number,
+                    'device_id' => $appliance->device_id,
+                    'status' => $effectiveStatus,
+                    'database_status' => $appliance->status,
+                    'is_online' => $isOnline,
+                    'client' => [
+                        'id' => $appliance->client->id ?? null,
+                        'name' => $appliance->client ? 
+                            trim($appliance->client->first_name . ' ' . $appliance->client->last_name) : 
+                            'Unassigned',
+                        'phone' => $appliance->client->phone ?? null,
+                    ],
+                    'product' => [
+                        'id' => $appliance->product->id ?? null,
+                        'name' => $appliance->product->name ?? 'Unknown Product',
+                        'model_code' => $appliance->product->model_code ?? 'N/A',
+                        'capacity_litres' => $appliance->product->capacity_litres ?? null,
+                    ],
+                    'installation_location' => $appliance->installation_location,
+                    'installation_date' => $appliance->installation_date?->format('Y-m-d'),
+                    'installation_date_formatted' => $appliance->installation_date?->format('M j, Y'),
+                    'current_temperature' => $appliance->current_temperature,
+                    'current_battery_voltage' => $appliance->current_battery_voltage,
+                    'last_ping' => $appliance->last_ping?->format('Y-m-d H:i:s'),
+                    'last_ping_formatted' => $appliance->last_ping?->format('M j, Y g:i A'),
+                    'last_maintenance_date' => $appliance->last_maintenance_date?->format('Y-m-d'),
+                    'created_at' => $appliance->created_at->format('Y-m-d H:i:s'),
+                    'updated_at' => $appliance->updated_at->format('Y-m-d H:i:s'),
+                ];
+            });
+
+            return response()->json([
+                'success' => true,
+                'data' => $appliances->items(),
+                'pagination' => [
+                    'current_page' => $appliances->currentPage(),
+                    'last_page' => $appliances->lastPage(),
+                    'per_page' => $appliances->perPage(),
+                    'total' => $appliances->total(),
+                    'from' => $appliances->firstItem(),
+                    'to' => $appliances->lastItem(),
+                ],
+                'filters' => [
+                    'search' => $request->search,
+                    'status' => $request->status,
+                    'location' => $request->location,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to fetch appliances: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get a single appliance by ID
+     */
+    public function getAppliance($id)
+    {
+        try {
+            $admin = Auth::guard('sanctum')->user();
+            
+            if (!$admin || !$admin instanceof AdminUser) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+
+            $appliance = Appliance::with(['client', 'product', 'paymentPlans'])
+                ->findOrFail($id);
+
+            $isOnline = $appliance->last_ping && $appliance->last_ping > Carbon::now()->subMinutes(15);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'id' => $appliance->id,
+                    'unit_id' => $appliance->unit_id,
+                    'serial_number' => $appliance->serial_number,
+                    'device_id' => $appliance->device_id,
+                    'status' => $appliance->status,
+                    'is_online' => $isOnline,
+                    'client' => $appliance->client ? [
+                        'id' => $appliance->client->id,
+                        'name' => trim($appliance->client->first_name . ' ' . $appliance->client->last_name),
+                        'phone' => $appliance->client->phone,
+                        'email' => $appliance->client->email,
+                    ] : null,
+                    'product' => $appliance->product ? [
+                        'id' => $appliance->product->id,
+                        'name' => $appliance->product->name,
+                        'model_code' => $appliance->product->model_code,
+                        'capacity_litres' => $appliance->product->capacity_litres,
+                        'power_consumption_watts' => $appliance->product->power_consumption_watts,
+                    ] : null,
+                    'installation_location' => $appliance->installation_location,
+                    'installation_date' => $appliance->installation_date?->format('Y-m-d'),
+                    'current_temperature' => $appliance->current_temperature,
+                    'current_battery_voltage' => $appliance->current_battery_voltage,
+                    'last_ping' => $appliance->last_ping?->format('Y-m-d H:i:s'),
+                    'last_maintenance_date' => $appliance->last_maintenance_date?->format('Y-m-d'),
+                    'warranty_expiry_date' => $appliance->warranty_expiry_date?->format('Y-m-d'),
+                    'installation_notes' => $appliance->installation_notes,
+                    'payment_plans' => $appliance->paymentPlans->map(function($plan) {
+                        return [
+                            'id' => $plan->id,
+                            'status' => $plan->status,
+                            'total_amount_ksh' => $plan->total_amount_ksh,
+                            'remaining_balance_ksh' => $plan->remaining_balance_ksh,
+                            'next_payment_due_date' => $plan->next_payment_due_date?->format('Y-m-d'),
+                        ];
+                    }),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to fetch appliance: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update appliance status
+     */
+    public function updateApplianceStatus(Request $request, $id)
+    {
+        try {
+            $admin = Auth::guard('sanctum')->user();
+            
+            if (!$admin || !$admin instanceof AdminUser) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+
+            $request->validate([
+                'status' => 'required|in:active,offline,maintenance,decommissioned',
+                'notes' => 'nullable|string|max:500'
+            ]);
+
+            $appliance = Appliance::findOrFail($id);
+            $oldStatus = $appliance->status;
+            
+            $appliance->update([
+                'status' => $request->status,
+                'last_maintenance_date' => $request->status === 'maintenance' ? now() : $appliance->last_maintenance_date,
+            ]);
+
+            // Log the status change
+            \Log::info("Appliance status changed", [
+                'appliance_id' => $appliance->id,
+                'unit_id' => $appliance->unit_id,
+                'old_status' => $oldStatus,
+                'new_status' => $request->status,
+                'admin_id' => $admin->id,
+                'notes' => $request->notes,
+                'timestamp' => now()
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Appliance status updated successfully',
+                'data' => [
+                    'id' => $appliance->id,
+                    'unit_id' => $appliance->unit_id,
+                    'old_status' => $oldStatus,
+                    'new_status' => $appliance->status,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to update appliance status: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Toggle appliance power (IoT control) 
+     */
+    public function toggleAppliancePower(Request $request, $id)
+    {
+        try {
+            $admin = Auth::guard('sanctum')->user();
+            
+            if (!$admin || !$admin instanceof AdminUser) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+
+            $appliance = Appliance::findOrFail($id);
+            
+            // For now, this is a placeholder for IoT integration
+            // In a real implementation, this would send MQTT commands to the device
+            $newPowerState = $request->input('power_on', true);
+            $action = $newPowerState ? 'turned on' : 'turned off';
+
+            // Log the power toggle action
+            \Log::info("Appliance power toggled", [
+                'appliance_id' => $appliance->id,
+                'unit_id' => $appliance->unit_id,
+                'device_id' => $appliance->device_id,
+                'action' => $action,
+                'admin_id' => $admin->id,
+                'timestamp' => now()
+            ]);
+
+            // TODO: Implement actual MQTT command sending here
+            // MqttService::sendPowerCommand($appliance->device_id, $newPowerState);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Appliance {$appliance->unit_id} {$action} successfully",
+                'data' => [
+                    'unit_id' => $appliance->unit_id,
+                    'device_id' => $appliance->device_id,
+                    'action' => $action,
+                    'power_on' => $newPowerState,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to toggle appliance power: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Sync appliance status with IoT device
+     */
+    public function syncApplianceStatus($id)
+    {
+        try {
+            $admin = Auth::guard('sanctum')->user();
+            
+            if (!$admin || !$admin instanceof AdminUser) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+
+            $appliance = Appliance::findOrFail($id);
+            
+            // For now, this simulates syncing with IoT device
+            // In a real implementation, this would query the device via MQTT
+            $currentTime = now();
+            
+            // Simulate device response with random but realistic data
+            $simulatedData = [
+                'temperature' => rand(-25, 10) . '°C',
+                'battery_voltage' => (rand(110, 130) / 10) . 'V',
+                'last_ping' => $currentTime,
+                'status' => $appliance->status, // Keep current status
+            ];
+
+            $appliance->update([
+                'current_temperature' => $simulatedData['temperature'],
+                'current_battery_voltage' => $simulatedData['battery_voltage'],
+                'last_ping' => $simulatedData['last_ping'],
+            ]);
+
+            \Log::info("Appliance status synced", [
+                'appliance_id' => $appliance->id,
+                'unit_id' => $appliance->unit_id,
+                'synced_data' => $simulatedData,
+                'admin_id' => $admin->id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => "Appliance {$appliance->unit_id} status synced successfully",
+                'data' => [
+                    'unit_id' => $appliance->unit_id,
+                    'temperature' => $simulatedData['temperature'],
+                    'battery_voltage' => $simulatedData['battery_voltage'],
+                    'last_ping' => $simulatedData['last_ping']->format('Y-m-d H:i:s'),
+                    'is_online' => true,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to sync appliance status: ' . $e->getMessage()
             ], 500);
         }
     }

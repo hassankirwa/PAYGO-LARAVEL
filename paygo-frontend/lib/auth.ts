@@ -46,6 +46,7 @@ class AuthService {
 
   async makeRequest(endpoint: string, options: RequestInit = {}) {
     const url = `${API_BASE_URL}${endpoint}`;
+    const token = localStorage.getItem('auth_token');
     
     try {
       const headers = {
@@ -67,7 +68,7 @@ class AuthService {
       } catch (parseError) {
         // If response is not JSON, it might be HTML error page
         const text = await response.text();
-        console.error('Non-JSON response:', text);
+        console.error('❌ Non-JSON response:', text);
         throw new Error('Server returned invalid response');
       }
 
@@ -77,7 +78,6 @@ class AuthService {
 
       return data;
     } catch (error) {
-      console.error('API Request Error:', error);
       throw error;
     }
   }
@@ -107,13 +107,29 @@ class AuthService {
 
   // Client Authentication
   async clientLogin(credentials: LoginCredentials): Promise<AuthResponse> {
+    console.log('🔐 Client login attempt:', { email: credentials.email });
+    
     const response = await this.makeRequest('/client/login', {
       method: 'POST',
       body: JSON.stringify(credentials),
     });
     
+    console.log('💾 Storing auth data:', { 
+      token: response.token ? 'present' : 'missing',
+      userType: 'client' 
+    });
+    
     localStorage.setItem('auth_token', response.token);
     localStorage.setItem('user_type', 'client');
+    
+    // Verify storage
+    const storedToken = localStorage.getItem('auth_token');
+    const storedUserType = localStorage.getItem('user_type');
+    console.log('✅ Auth data stored:', { 
+      tokenStored: !!storedToken,
+      userTypeStored: storedUserType 
+    });
+    
     return response;
   }
 
@@ -173,19 +189,33 @@ class AuthService {
 
   async getCurrentUser(): Promise<User | null> {
     const userType = localStorage.getItem('user_type') || 'user';
+    const token = localStorage.getItem('auth_token');
+    
+    console.log('🔍 getCurrentUser called:', { userType, hasToken: !!token });
+    
+    if (!token) {
+      console.log('❌ No auth token found');
+      return null;
+    }
     
     try {
       if (userType === 'client') {
+        console.log('🔍 Fetching client profile...');
         const response = await this.makeRequest('/client/profile');
-        return response.client;
+        console.log('✅ Client profile response:', response);
+        return { ...response.client, user_type: 'client' };
       } else if (userType === 'admin') {
+        console.log('🔍 Fetching admin profile...');
         const response = await this.makeRequest('/admin/profile');
-        return response.admin;
+        console.log('✅ Admin profile response:', response);
+        return { ...response.admin, user_type: 'admin' };
       } else {
         const response = await this.makeRequest('/user');
         return response;
       }
     } catch (error) {
+      console.error('❌ getCurrentUser error:', error);
+      // Clear invalid tokens
       this.logout();
       return null;
     }
@@ -280,7 +310,7 @@ class AuthService {
 
   // Admin Dashboard Methods
   async getDashboardStats(): Promise<any> {
-    return await this.makeRequest('/admin/dashboard/stats');
+    return await this.makeRequest('/admin/dashboard');
   }
 
   async getClientStatistics(): Promise<any> {
@@ -293,6 +323,56 @@ class AuthService {
 
   async getApplianceStatistics(): Promise<any> {
     return await this.makeRequest('/admin/dashboard/appliances');
+  }
+
+  // Admin Appliance Management Methods (NEW)
+  async getAppliances(params?: {
+    search?: string;
+    status?: string;
+    location?: string;
+    page?: number;
+    per_page?: number;
+    sort_by?: string;
+    sort_direction?: 'asc' | 'desc';
+  }): Promise<any> {
+    const queryParams = new URLSearchParams();
+    
+    if (params?.search) queryParams.append('search', params.search);
+    if (params?.status && params.status !== 'all') queryParams.append('status', params.status);
+    if (params?.location) queryParams.append('location', params.location);
+    if (params?.page) queryParams.append('page', params.page.toString());
+    if (params?.per_page) queryParams.append('per_page', params.per_page.toString());
+    if (params?.sort_by) queryParams.append('sort_by', params.sort_by);
+    if (params?.sort_direction) queryParams.append('sort_direction', params.sort_direction);
+
+    const queryString = queryParams.toString();
+    const endpoint = `/admin/appliances${queryString ? `?${queryString}` : ''}`;
+    
+    return await this.makeRequest(endpoint);
+  }
+
+  async getAppliance(id: string | number): Promise<any> {
+    return await this.makeRequest(`/admin/appliances/${id}`);
+  }
+
+  async updateApplianceStatus(id: string | number, status: string, notes?: string): Promise<any> {
+    return await this.makeRequest(`/admin/appliances/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, notes }),
+    });
+  }
+
+  async toggleAppliancePower(id: string | number, powerOn: boolean): Promise<any> {
+    return await this.makeRequest(`/admin/appliances/${id}/toggle-power`, {
+      method: 'POST',
+      body: JSON.stringify({ power_on: powerOn }),
+    });
+  }
+
+  async syncApplianceStatus(id: string | number): Promise<any> {
+    return await this.makeRequest(`/admin/appliances/${id}/sync`, {
+      method: 'POST',
+    });
   }
 }
 

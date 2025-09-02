@@ -16,6 +16,8 @@ import { LocationsTable } from "@/components/locations-table"
 import { BulkSmsSection } from "@/components/bulk-sms-section"
 import { EmailMarketingSection } from "@/components/email-marketing-section"
 import { SettingsSection } from "@/components/settings-section"
+import { AdminReceiptsTable } from "@/components/admin-receipts-table"
+import { ProductManagementSection } from "@/components/product-management-section"
 import { Separator } from "@/components/ui/separator"
 import {
   Breadcrumb,
@@ -42,8 +44,10 @@ import GenerateReportModal from "@/components/generate-report-modal"
 import { ProfileSettingsModal } from "@/components/profile-settings-modal"
 import { PreferencesModal } from "@/components/preferences-modal"
 import { AdminDashboardCards } from "@/components/admin-dashboard-cards"
+import { useToast } from "@/hooks/use-toast"
 
 export default function AdminDashboard() {
+  const { toast } = useToast()
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
@@ -112,10 +116,14 @@ export default function AdminDashboard() {
     switch (view) {
       case "dashboard":
         return "Dashboard Overview"
+      case "products":
+        return "Product Management"
       case "units":
         return "Units & Freezers"
       case "locations":
         return "Locations Management"
+      case "receipts":
+        return "Payment Receipts"
       case "bulk-sms":
         return "Bulk SMS"
       case "email-marketing":
@@ -135,10 +143,12 @@ export default function AdminDashboard() {
         return "Manage and monitor your appliance inventory"
       case "locations":
         return "Oversee all deployment locations"
+      case "receipts":
+        return "View and manage all payment receipts"
       case "bulk-sms":
-        return "Send bulk SMS notifications to clients"
+        return "Send bulk SMS notifications to customers"
       case "email-marketing":
-        return "Manage email campaigns and marketing"
+        return "Manage email campaigns and communications"
       case "settings":
         return "Configure system settings and preferences"
       default:
@@ -149,7 +159,11 @@ export default function AdminDashboard() {
   const handleToggleAppliance = (clientId: number, currentStatus: string) => {
     const action = currentStatus === "active" ? "suspend" : "activate"
     if (confirm(`Are you sure you want to ${action} this appliance?`)) {
-      alert(`Appliance ${action}d successfully!`)
+      toast({
+        title: `Appliance ${action.charAt(0).toUpperCase() + action.slice(1)}! 🔌`,
+        description: `Appliance ${action}d successfully!`,
+        variant: "default",
+      })
     }
   }
 
@@ -457,8 +471,10 @@ export default function AdminDashboard() {
                   </Card>
                 </>
               )}
+              {currentView === "products" && <ProductManagementSection />}
               {currentView === "units" && <UnitsFreezersTable />}
               {currentView === "locations" && <LocationsTable />}
+              {currentView === "receipts" && <AdminReceiptsTable />}
               {currentView === "bulk-sms" && <BulkSmsSection />}
               {currentView === "email-marketing" && <EmailMarketingSection />}
               {currentView === "settings" && <SettingsSection />}

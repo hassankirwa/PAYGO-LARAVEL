@@ -12,6 +12,7 @@ import { AnalyticsCard } from "./analytics-card"
 import { AddClientModal } from "@/components/add-client-modal"
 import { RegisterApplianceModal } from "@/components/register-appliance-modal"
 import GenerateReportModal from "@/components/generate-report-modal"
+import { useToast } from "@/hooks/use-toast"
 
 // Enhanced admin stats with more detailed metrics
 const adminStats = {
@@ -24,6 +25,7 @@ const adminStats = {
 }
 
 export function DashboardOverview() {
+  const { toast } = useToast()
   const [searchTerm, setSearchTerm] = useState("")
   const [filterStatus, setFilterStatus] = useState("all")
   const [sortColumn, setSortColumn] = useState<string | null>(null)
@@ -37,7 +39,11 @@ export function DashboardOverview() {
   const handleToggleAppliance = (clientId: number, currentStatus: string) => {
     const action = currentStatus === "active" ? "suspend" : "activate"
     if (confirm(`Are you sure you want to ${action} this appliance?`)) {
-      alert(`Appliance ${action}d successfully!`)
+      toast({
+        title: `Appliance ${action.charAt(0).toUpperCase() + action.slice(1)}! 🔌`,
+        description: `Appliance ${action}d successfully!`,
+        variant: "default",
+      })
     }
   }
 

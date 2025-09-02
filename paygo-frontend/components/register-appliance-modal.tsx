@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/hooks/use-toast"
 import { Textarea } from "@/components/ui/textarea"
 import { Refrigerator, Save, X } from "lucide-react"
 
@@ -15,6 +16,7 @@ interface RegisterApplianceModalProps {
 }
 
 export function RegisterApplianceModal({ isOpen, onClose }: RegisterApplianceModalProps) {
+  const { toast } = useToast()
   const [formData, setFormData] = useState({
     serialNumber: "",
     unitId: "",
@@ -41,12 +43,20 @@ export function RegisterApplianceModal({ isOpen, onClose }: RegisterApplianceMod
     
     // Validate required fields
     if (!formData.serialNumber || !formData.unitId || !formData.model || !formData.type || !formData.location) {
-      alert("Please fill in all required fields")
+      toast({
+        title: "Required Fields Missing",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      })
       return
     }
 
     // Simulate saving appliance
-    alert(`Appliance ${formData.unitId} registered successfully!`)
+    toast({
+      title: "Appliance Registered! 🔌",
+      description: `Appliance ${formData.unitId} registered successfully!`,
+      variant: "default",
+    })
     
     // Reset form and close modal
     setFormData({

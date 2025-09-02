@@ -21,18 +21,18 @@ class Product extends Model
         'defrost_type',
         'cash_warranty_months',
         'paygo_warranty_months',
-        'price_usd',
-        'weekly_installment_usd',
-        'monthly_installment_usd',
+        'price_ksh',
+        'weekly_installment_ksh',
+        'monthly_installment_ksh',
         'features',
         'images',
         'is_active'
     ];
 
     protected $casts = [
-        'price_usd' => 'decimal:2',
-        'weekly_installment_usd' => 'decimal:2',
-        'monthly_installment_usd' => 'decimal:2',
+        'price_ksh' => 'decimal:2',
+        'weekly_installment_ksh' => 'decimal:2',
+        'monthly_installment_ksh' => 'decimal:2',
         'features' => 'array',
         'images' => 'array',
         'is_active' => 'boolean',
@@ -52,11 +52,16 @@ class Product extends Model
     // Helper methods
     public function getFormattedPriceAttribute()
     {
-        return '$' . number_format($this->price_usd, 2);
+        return 'KSh ' . number_format($this->price_ksh, 0);
     }
 
-    public function getWeeklyInstallmentAttribute()
+    public function getFormattedWeeklyInstallmentAttribute()
     {
-        return '$' . number_format($this->weekly_installment_usd, 2);
+        return 'KSh ' . number_format($this->weekly_installment_ksh, 0);
+    }
+
+    public function getFormattedMonthlyInstallmentAttribute()
+    {
+        return 'KSh ' . number_format($this->monthly_installment_ksh, 0);
     }
 }

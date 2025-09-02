@@ -5,10 +5,17 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { MessageSquare, Send } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 export function BulkSmsSection() {
-  const handleSendSms = () => {
-    alert("Sending bulk SMS (dummy action)...")
+  const { toast } = useToast()
+
+  const sendSms = () => {
+    toast({
+      title: "SMS Campaign Sent! 📱",
+      description: "Sending bulk SMS (dummy action)...",
+      variant: "default",
+    })
   }
 
   return (
@@ -27,7 +34,7 @@ export function BulkSmsSection() {
           </Label>
           <Textarea id="sms-content" placeholder="Type your message here..." rows={5} />
         </div>
-        <Button onClick={handleSendSms} className="w-full bg-blue-600 hover:bg-blue-700">
+        <Button onClick={sendSms} className="w-full bg-blue-600 hover:bg-blue-700">
           <Send className="h-4 w-4 mr-2" />
           Send Bulk SMS
         </Button>

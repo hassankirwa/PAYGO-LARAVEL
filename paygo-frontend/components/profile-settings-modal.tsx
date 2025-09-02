@@ -6,8 +6,10 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
+  VisuallyHidden,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,6 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, User, Lock, Eye, EyeOff } from "lucide-react"
 import { toast } from "sonner"
+import { useToast } from "@/hooks/use-toast"
 
 interface ProfileSettingsModalProps {
   isOpen: boolean
@@ -25,6 +28,7 @@ interface ProfileSettingsModalProps {
 }
 
 export function ProfileSettingsModal({ isOpen, onClose, userType }: ProfileSettingsModalProps) {
+  const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [profileData, setProfileData] = useState<any>(null)
   const [formData, setFormData] = useState<any>({})
@@ -38,7 +42,6 @@ export function ProfileSettingsModal({ isOpen, onClose, userType }: ProfileSetti
     new: false,
     confirm: false
   })
-  const [error, setError] = useState('')
 
   useEffect(() => {
     if (isOpen) {
@@ -49,14 +52,17 @@ export function ProfileSettingsModal({ isOpen, onClose, userType }: ProfileSetti
   const fetchProfileData = async () => {
     try {
       setLoading(true)
-      setError('')
       const response = await authService.getProfileDetails()
       if (response.success) {
         setProfileData(response.data)
         setFormData(response.data)
       }
     } catch (error: any) {
-      setError(error.message || 'Failed to load profile data')
+      toast({
+        title: "Error Loading Profile",
+        description: error.message || 'Failed to load profile data',
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
@@ -65,7 +71,6 @@ export function ProfileSettingsModal({ isOpen, onClose, userType }: ProfileSetti
   const handleProfileUpdate = async () => {
     try {
       setLoading(true)
-      setError('')
       
       // Only send changed fields
       const changedFields: any = {}
@@ -82,12 +87,20 @@ export function ProfileSettingsModal({ isOpen, onClose, userType }: ProfileSetti
 
       const response = await authService.updateProfile(changedFields)
       if (response.success) {
-        toast.success('Profile updated successfully')
+        toast({
+          title: "Profile Updated! ✅",
+          description: "Profile updated successfully",
+          variant: "default",
+        })
         setProfileData(response.data)
         setFormData(response.data)
       }
     } catch (error: any) {
-      setError(error.message || 'Failed to update profile')
+      toast({
+        title: "Error Updating Profile",
+        description: error.message || 'Failed to update profile',
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
@@ -96,21 +109,32 @@ export function ProfileSettingsModal({ isOpen, onClose, userType }: ProfileSetti
   const handlePasswordChange = async () => {
     try {
       setLoading(true)
-      setError('')
 
       if (passwordData.new_password !== passwordData.new_password_confirmation) {
-        setError('New passwords do not match')
+        toast({
+          title: "Password Mismatch",
+          description: "New passwords do not match",
+          variant: "destructive",
+        })
         return
       }
 
       if (passwordData.new_password.length < 8) {
-        setError('New password must be at least 8 characters long')
+        toast({
+          title: "Password Too Short",
+          description: "New password must be at least 8 characters long",
+          variant: "destructive",
+        })
         return
       }
 
       const response = await authService.changePassword(passwordData)
       if (response.success) {
-        toast.success('Password changed successfully')
+        toast({
+          title: "Password Changed! 🔒",
+          description: "Password changed successfully",
+          variant: "default",
+        })
         setPasswordData({
           current_password: '',
           new_password: '',
@@ -118,7 +142,11 @@ export function ProfileSettingsModal({ isOpen, onClose, userType }: ProfileSetti
         })
       }
     } catch (error: any) {
-      setError(error.message || 'Failed to change password')
+      toast({
+        title: "Error Changing Password",
+        description: error.message || 'Failed to change password',
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
@@ -140,6 +168,9 @@ export function ProfileSettingsModal({ isOpen, onClose, userType }: ProfileSetti
     return (
       <Dialog open={isOpen} onOpenChange={onClose}>
         <DialogContent className="sm:max-w-[600px]">
+          <VisuallyHidden>
+            <DialogTitle>Loading Profile</DialogTitle>
+          </VisuallyHidden>
           <div className="flex items-center justify-center p-8">
             <Loader2 className="h-8 w-8 animate-spin" />
           </div>
@@ -160,12 +191,6 @@ export function ProfileSettingsModal({ isOpen, onClose, userType }: ProfileSetti
             Manage your account information and security settings.
           </DialogDescription>
         </DialogHeader>
-
-        {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
 
         <Tabs defaultValue="profile" className="w-full">
           <TabsList className="grid w-full grid-cols-2">

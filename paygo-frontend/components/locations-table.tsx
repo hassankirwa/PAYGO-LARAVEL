@@ -6,14 +6,20 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { MapPin, Search, Eye, TrendingUp, Settings } from "lucide-react"
 import { locations } from "@/lib/locations"
+import { useToast } from "@/hooks/use-toast"
 
 export function LocationsTable() {
+  const { toast } = useToast()
   const [searchTerm, setSearchTerm] = useState("")
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc")
 
   const handleAction = (county: string, action: string) => {
-    alert(`Performing "${action}" action for ${county} county.`)
+    toast({
+      title: `${action.charAt(0).toUpperCase() + action.slice(1)} Action`,
+      description: `Performing "${action}" action for ${county} county.`,
+      variant: "default",
+    })
     // In a real app, you'd call an API here
   }
 

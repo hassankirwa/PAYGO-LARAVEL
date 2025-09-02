@@ -19,12 +19,20 @@ import {
   Thermometer,
   BatteryCharging,
   MapPin,
+  RefreshCw,
+  Clock,
+  Smartphone,
+  TrendingUp,
+  Activity,
+  Loader2
 } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { PaymentModal } from "@/components/payment-modal" // Import the new PaymentModal
+import { PaymentModal } from "@/components/payment-modal"
+import { OngoingPaymentModal } from "@/components/ongoing-payment-modal"
 import { authService, User as AuthUser } from "@/lib/auth"
 import { ProfileSettingsModal } from "@/components/profile-settings-modal"
 import { PreferencesModal } from "@/components/preferences-modal"
+import { ClientSubscriptionStatus } from "@/components/client-subscription-status"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,110 +42,185 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Settings } from "lucide-react"
-
-// Dummy data
-const clientData = {
-  name: "John Doe",
-  email: "client@example.com",
-  phone: "+254 700 123 456",
-  appliance: {
-    model: "KOYO BC-90DC FRIDGE",
-    capacity: "90 litres",
-    serialNumber: "KY90-2024-001",
-    installDate: "2024-01-15",
-    status: "active",
-    temperature: "3°C", // Added
-    batteryVoltage: "12.8V", // Added
-    location: "Nairobi, Kenya", // Added
-  },
-  paymentPlan: {
-    totalAmount: 1290,
-    paidAmount: 645,
-    remainingAmount: 645,
-    weeklyAmount: 25,
-    nextPaymentDate: "2024-01-28",
-    paymentsCompleted: 26,
-    totalPayments: 52,
-  },
-  paymentHistory: [
-    { date: "2024-01-21", amount: 25, status: "paid", method: "M-Pesa" },
-    { date: "2024-01-14", amount: 25, status: "paid", method: "M-Pesa" },
-    { date: "2024-01-07", amount: 25, status: "paid", method: "M-Pesa" },
-    { date: "2023-12-31", amount: 25, status: "paid", method: "M-Pesa" },
-    { date: "2023-12-24", amount: 25, status: "paid", method: "M-Pesa" },
-  ],
-  notifications: [
-    { id: 1, message: "Payment reminder: Next payment due in 3 days", type: "reminder", date: "2024-01-25" },
-    { id: 2, message: "Payment received successfully", type: "success", date: "2024-01-21" },
-    { id: 3, message: "Monthly service report available", type: "info", date: "2024-01-20" },
-  ],
-}
+import { useToast } from "@/hooks/use-toast"
+import { 
+  dashboardApi, 
+  DashboardStats, 
+  MpesaTransactionData, 
+  RenewalOption,
+  PaymentDataResponse 
+} from "@/lib/api"
 
 export default function ClientDashboard() {
+  const router = useRouter()
+  const { toast } = useToast()
+
+  // Authentication state
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+
+  // Dashboard data state
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null)
+  const [paymentData, setPaymentData] = useState<PaymentDataResponse | null>(null)
+  const [renewalOptions, setRenewalOptions] = useState<RenewalOption[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
+
+  // Modal states
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
+  const [isOngoingPaymentModalOpen, setIsOngoingPaymentModalOpen] = useState(false)
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false)
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false)
-  const router = useRouter()
 
+  // Check authentication status
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // Check if user is authenticated
-        if (!authService.isAuthenticated()) {
-          router.push("/login")
+        const isAuth = await authService.isAuthenticated()
+        setIsAuthenticated(isAuth)
+        
+        if (isAuth) {
+          const userData = authService.getCurrentUser()
+          setUser(userData)
+        } else {
+          router.push('/auth/login')
           return
         }
-
-        // Check if user type is client
-        const userType = authService.getUserType()
-        if (userType !== "client") {
-          router.push("/login")
-          return
-        }
-
-        // Get current user data
-        const currentUser = await authService.getCurrentUser()
-        if (!currentUser) {
-          router.push("/login")
-          return
-        }
-
-        setUser(currentUser)
       } catch (error) {
-        console.error("Authentication error:", error)
-        router.push("/login")
-      } finally {
-        setIsLoading(false)
+        console.error('Auth check failed:', error)
+        router.push('/auth/login')
       }
     }
 
     checkAuth()
   }, [router])
 
-  const handleLogout = async () => {
+  // Load dashboard data
+  const loadDashboardData = async () => {
+    if (!isAuthenticated) return
+
     try {
-      await authService.logout()
-      router.push("/login")
+      setLoading(true)
+      setError(null)
+
+      console.log('🔄 Loading dashboard data...')
+
+      // Load all dashboard data in parallel
+      const [statsResponse, paymentsResponse, renewalResponse] = await Promise.allSettled([
+        dashboardApi.getStats(),
+        dashboardApi.getPayments(),
+        dashboardApi.getRenewalOptions(),
+      ])
+
+      // Handle stats response
+      if (statsResponse.status === 'fulfilled') {
+        setDashboardStats(statsResponse.value.stats)
+        console.log('✅ Dashboard stats loaded')
+      } else {
+        console.error('❌ Failed to load stats:', statsResponse.reason)
+      }
+
+      // Handle payments response
+      if (paymentsResponse.status === 'fulfilled') {
+        setPaymentData(paymentsResponse.value.payments)
+        console.log('✅ Payment data loaded')
+      } else {
+        console.error('❌ Failed to load payments:', paymentsResponse.reason)
+      }
+
+      // Handle renewal options response
+      if (renewalResponse.status === 'fulfilled') {
+        setRenewalOptions(renewalResponse.value.renewal_options)
+        console.log('✅ Renewal options loaded')
+      } else {
+        console.error('❌ Failed to load renewal options:', renewalResponse.reason)
+      }
+
+      setLastUpdated(new Date())
+      
     } catch (error) {
-      console.error("Logout error:", error)
-      router.push("/login")
+      console.error('❌ Error loading dashboard data:', error)
+      setError(error instanceof Error ? error.message : 'Failed to load dashboard data')
+      
+      toast({
+        title: "Error Loading Data",
+        description: "Failed to load dashboard information. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
     }
   }
 
-  if (isLoading) return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto"></div>
-        <p className="mt-4 text-gray-600">Loading your dashboard...</p>
+  // Load data on component mount and when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadDashboardData()
+    }
+  }, [isAuthenticated])
+
+  // Remove auto-refresh to prevent continuous API calls
+  // Only refresh manually when needed
+  useEffect(() => {
+    // No automatic refresh interval - only manual refresh when needed
+    // This prevents unnecessary backend load and improves performance
+  }, [isAuthenticated])
+
+  const handleLogout = async () => {
+    try {
+      await authService.logout()
+      router.push('/auth/login')
+    } catch (error) {
+      console.error('Logout failed:', error)
+      toast({
+        title: "Logout Error",
+        description: "Failed to logout properly. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleMakePayment = () => {
+    setIsPaymentModalOpen(true)
+  }
+
+  const handleRefreshData = () => {
+    loadDashboardData()
+    toast({
+      title: "Refreshing Data",
+      description: "Loading latest dashboard information...",
+    })
+  }
+
+  // Loading state
+  if (loading && !dashboardStats) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-gray-600">Loading your dashboard...</p>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
-  if (!user) return null
-
-  const progressPercentage = (clientData.paymentPlan.paidAmount / clientData.paymentPlan.totalAmount) * 100
+  // Error state
+  if (error && !dashboardStats) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <AlertTriangle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Unable to Load Dashboard</h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Button onClick={handleRefreshData} className="mb-4">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Try Again
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -145,51 +228,62 @@ export default function ClientDashboard() {
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
-            <div className="flex items-center gap-3">
-              <Refrigerator className="h-8 w-8 text-emerald-600" />
-              <h1 className="text-2xl font-bold text-gray-900">KOYO Client Portal</h1>
+            <div className="flex items-center">
+              <Refrigerator className="h-8 w-8 text-blue-600 mr-3" />
+              <h1 className="text-2xl font-bold text-gray-900">KOYO PayGo Dashboard</h1>
             </div>
-            <div className="flex items-center gap-4">
-              {/* User Profile Dropdown */}
+            
+            <div className="flex items-center space-x-4">
+              {/* Refresh Button */}
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleRefreshData}
+                disabled={loading}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+
+              {/* Last Updated */}
+              <span className="text-sm text-gray-500">
+                Updated: {lastUpdated.toLocaleTimeString()}
+              </span>
+
+              {/* User Menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="flex items-center gap-3 hover:bg-gray-100 rounded-lg px-3 py-2">
-                    <Avatar className="w-8 h-8">
-                      <AvatarImage src="/placeholder-avatar.jpg" />
-                      <AvatarFallback className="bg-gradient-to-r from-emerald-500 to-blue-500 text-white text-sm font-medium">
-                        {user.first_name?.charAt(0) || user.name?.charAt(0) || 'C'}
+                  <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src="" alt={user?.name || 'User'} />
+                      <AvatarFallback>
+                        {user?.name ? user.name.split(' ').map(n => n[0]).join('').toUpperCase() : 'U'}
                       </AvatarFallback>
                     </Avatar>
-                    <div className="text-left hidden md:block">
-                      <p className="text-sm font-medium text-gray-900">
-                        {user.first_name && user.last_name 
-                          ? `${user.first_name} ${user.last_name}`
-                          : user.name || user.email
-                        }
-                      </p>
-                      <p className="text-xs text-gray-500">Client</p>
-                    </div>
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuItem 
-                    className="flex items-center gap-2 cursor-pointer"
-                    onClick={() => setIsProfileSettingsOpen(true)}
-                  >
-                    <User className="h-4 w-4" />
+                <DropdownMenuContent className="w-56" align="end" forceMount>
+                  <div className="flex items-center justify-start gap-2 p-2">
+                    <div className="flex flex-col space-y-1 leading-none">
+                      <p className="font-medium">{user?.name || 'User'}</p>
+                      <p className="w-[200px] truncate text-sm text-muted-foreground">
+                        {user?.email}
+                      </p>
+                    </div>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => setIsProfileSettingsOpen(true)}>
+                    <User className="mr-2 h-4 w-4" />
                     Profile Settings
                   </DropdownMenuItem>
-                  <DropdownMenuItem 
-                    className="flex items-center gap-2 cursor-pointer"
-                    onClick={() => setIsPreferencesOpen(true)}
-                  >
-                    <Settings className="h-4 w-4" />
+                  <DropdownMenuItem onClick={() => setIsPreferencesOpen(true)}>
+                    <Settings className="mr-2 h-4 w-4" />
                     Preferences
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout} className="flex items-center gap-2 text-red-600 cursor-pointer">
-                    <LogOut className="h-4 w-4" />
-                    Sign out
+                  <DropdownMenuItem onClick={handleLogout}>
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Log out
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -200,246 +294,323 @@ export default function ClientDashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center">
-                  <Power className="h-6 w-6 text-emerald-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Appliance Status</p>
-                  <p className="text-2xl font-bold text-gray-900">Active</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                  <DollarSign className="h-6 w-6 text-blue-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Amount Paid</p>
-                  <p className="text-2xl font-bold text-gray-900">${clientData.paymentPlan.paidAmount}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
-                  <Calendar className="h-6 w-6 text-orange-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Next Payment</p>
-                  <p className="text-2xl font-bold text-gray-900">${clientData.paymentPlan.weeklyAmount}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-                  <CheckCircle className="h-6 w-6 text-purple-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Progress</p>
-                  <p className="text-2xl font-bold text-gray-900">{Math.round(progressPercentage)}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+        {/* Welcome Section */}
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">
+            Welcome back, {dashboardStats?.client_info?.name || user?.name || 'Valued Customer'}!
+          </h2>
+          <p className="text-gray-600">
+            Here's an overview of your KOYO appliances and payment status.
+          </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Payment Progress */}
+        {/* Summary Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CreditCard className="h-5 w-5 text-emerald-600" />
-                Payment Progress
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-gray-600">Ownership Progress</span>
-                  <span className="text-sm font-semibold">{Math.round(progressPercentage)}</span>
-                </div>
-                <Progress value={progressPercentage} className="h-3" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="text-center p-4 bg-emerald-50 rounded-lg">
-                  <p className="text-2xl font-bold text-emerald-600">${clientData.paymentPlan.paidAmount}</p>
-                  <p className="text-sm text-gray-600">Paid</p>
-                </div>
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <p className="text-2xl font-bold text-gray-600">${clientData.paymentPlan.remainingAmount}</p>
-                  <p className="text-sm text-gray-600">Remaining</p>
-                </div>
-              </div>
-
-              <div className="p-4 bg-blue-50 rounded-lg">
-                <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm text-gray-600">Next Payment</span>
-                  <Badge className="bg-blue-100 text-blue-800">Due Soon</Badge>
-                </div>
-                <p className="text-xl font-bold text-blue-600">${clientData.paymentPlan.weeklyAmount}</p>
-                <p className="text-sm text-gray-600">Due: {clientData.paymentPlan.nextPaymentDate}</p>
-                <PaymentModal
-                  triggerButtonText="Pay Now"
-                  productName={clientData.appliance.model}
-                  paymentAmount={clientData.paymentPlan.weeklyAmount}
-                  paymentType="Weekly Installment"
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Appliance Details */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Refrigerator className="h-5 w-5 text-emerald-600" />
-                My Appliance
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <Power className="h-6 w-6 text-green-600" />
-                  <div>
-                    <p className="font-semibold text-green-800">Status: Active</p>
-                    <p className="text-sm text-green-600">Running normally</p>
-                  </div>
-                </div>
-                <Badge className="bg-green-100 text-green-800">Online</Badge>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Model:</span>
-                  <span className="font-semibold">{clientData.appliance.model}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Capacity:</span>
-                  <span className="font-semibold">{clientData.appliance.capacity}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Serial Number:</span>
-                  <span className="font-semibold">{clientData.appliance.serialNumber}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Install Date:</span>
-                  <span className="font-semibold">{clientData.appliance.installDate}</span>
-                </div>
-                {/* New fields */}
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 flex items-center gap-1">
-                    <Thermometer className="h-4 w-4" /> Temperature:
-                  </span>
-                  <span className="font-semibold">{clientData.appliance.temperature}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 flex items-center gap-1">
-                    <BatteryCharging className="h-4 w-4" /> Battery Voltage:
-                  </span>
-                  <span className="font-semibold">{clientData.appliance.batteryVoltage}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600 flex items-center gap-1">
-                    <MapPin className="h-4 w-4" /> Location:
-                  </span>
-                  <span className="font-semibold">{clientData.appliance.location}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Payment History & Notifications */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
-          {/* Payment History */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-blue-600" />
-                Recent Payments
-              </CardTitle>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Active Subscriptions</CardTitle>
+              <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {clientData.paymentHistory.map((payment, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                        <CheckCircle className="h-5 w-5 text-green-600" />
+              <div className="text-2xl font-bold text-green-600">
+                {dashboardStats?.summary.active_subscriptions || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total: {dashboardStats?.summary.total_subscriptions || 0}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Paid</CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">
+                {dashboardStats?.summary.formatted_total_paid || 'KSh 0.00'}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total Payments
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Remaining Balance</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-orange-600">
+                {dashboardStats?.summary.formatted_total_balance || 'KSh 0.00'}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                across all plans
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Appliances</CardTitle>
+              <Refrigerator className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-purple-600">
+                {dashboardStats?.summary.total_appliances || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                KOYO devices
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Subscription Status */}
+        <div className="mb-8">
+          <ClientSubscriptionStatus />
+        </div>
+
+        {/* Appliances Grid */}
+        {dashboardStats?.appliances && dashboardStats.appliances.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">Your Appliances</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {dashboardStats.appliances.map((appliance) => (
+                <Card key={appliance.id}>
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <span className="truncate">{appliance.product_name}</span>
+                      <Badge variant={appliance.status === 'active' ? 'default' : 'secondary'}>
+                        {appliance.status}
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center text-sm text-gray-600">
+                      <Power className="h-4 w-4 mr-2" />
+                      Device ID: {appliance.device_id}
+                    </div>
+                    
+                    {appliance.temperature && (
+                      <div className="flex items-center text-sm text-gray-600">
+                        <Thermometer className="h-4 w-4 mr-2" />
+                        Temperature: {appliance.temperature}
+                      </div>
+                    )}
+                    
+                    {appliance.battery_voltage && (
+                      <div className="flex items-center text-sm text-gray-600">
+                        <BatteryCharging className="h-4 w-4 mr-2" />
+                        Battery: {appliance.battery_voltage}
+                      </div>
+                    )}
+                    
+                    <div className="flex items-center text-sm text-gray-600">
+                      <Calendar className="h-4 w-4 mr-2" />
+                      Installed: {appliance.installation_date}
+                    </div>
+                    
+                    {appliance.last_ping && (
+                      <div className="flex items-center text-sm text-gray-500">
+                        <Activity className="h-4 w-4 mr-2" />
+                        Last seen: {appliance.last_ping}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Payment Plans */}
+        {dashboardStats?.payment_plans && dashboardStats.payment_plans.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">Payment Plans</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {dashboardStats.payment_plans.map((plan) => (
+                <Card key={plan.id}>
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <span>{plan.plan_name}</span>
+                      <Badge variant={plan.status === 'active' ? 'default' : 'secondary'}>
+                        {plan.status}
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Progress</span>
+                        <span>{plan.completed_installments}/{plan.total_installments} payments</span>
+                      </div>
+                      <Progress value={plan.progress_percentage} className="h-2" />
+                      <div className="text-xs text-gray-500">
+                        {plan.progress_percentage}% complete
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-600">Next Payment:</span>
+                        <div className="font-medium">KSh {plan.installment_amount.toLocaleString()}</div>
                       </div>
                       <div>
-                        <p className="font-semibold text-gray-900">${payment.amount}</p>
-                        <p className="text-sm text-gray-600">{payment.date}</p>
+                        <span className="text-gray-600">Due Date:</span>
+                        <div className="font-medium">{plan.next_payment_due}</div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <Badge className="bg-green-100 text-green-800">{payment.method}</Badge>
-                      <p className="text-xs text-gray-500 mt-1">Completed</p>
+                    
+                    <div className="text-sm">
+                      <span className="text-gray-600">Remaining Balance:</span>
+                      <div className="font-medium text-lg">KSh {plan.remaining_balance.toLocaleString()}</div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
 
-          {/* Notifications */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Bell className="h-5 w-5 text-orange-600" />
-                Notifications
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {clientData.notifications.map((notification) => (
-                  <div key={notification.id} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center mt-1">
-                      {notification.type === "reminder" && (
-                        <AlertTriangle className="h-5 w-5 text-orange-600" />
-                      )}
-                      {notification.type === "success" && <CheckCircle className="h-5 w-5 text-green-600" />}
-                      {notification.type === "info" && <Bell className="h-5 w-5 text-blue-600" />}
+                    {plan.status === 'active' && (
+                      <Button 
+                        onClick={handleMakePayment} 
+                        className="w-full"
+                        size="sm"
+                      >
+                        <Smartphone className="h-4 w-4 mr-2" />
+                        Pay via M-Pesa STK Push
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Payments */}
+        {dashboardStats?.recent_payments && dashboardStats.recent_payments.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">Payments</h3>
+            <Card>
+              <CardContent className="p-0">
+                <div className="divide-y">
+                  {dashboardStats.recent_payments.map((payment, index) => (
+                    <div key={index} className="flex items-center justify-between p-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="flex-shrink-0">
+                          <CheckCircle className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                          <div className="font-medium">{payment.formatted_amount}</div>
+                          <div className="text-sm text-gray-500">
+                            {payment.method} • {payment.receipt_number}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {payment.date}
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm text-gray-900">{notification.message}</p>
-                      <p className="text-xs text-gray-500 mt-1">{notification.date}</p>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Renewal Options */}
+        {renewalOptions.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-xl font-semibold text-gray-900 mb-4">Subscription Renewals</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {renewalOptions.map((option) => (
+                <Card key={option.subscription_id}>
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between">
+                      <span>{option.product_name}</span>
+                      <Badge variant={option.current_status === 'active' ? 'default' : 'secondary'}>
+                        {option.current_status}
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-600">Device ID:</span>
+                        <div className="font-medium">{option.device_id}</div>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Next Amount:</span>
+                        <div className="font-medium">{option.formatted_amount}</div>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                    
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-600">Due Date:</span>
+                        <div className="font-medium">{option.formatted_due_date}</div>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Days Left:</span>
+                        <div className="font-medium">
+                          {option.days_remaining !== null ? `${option.days_remaining} days` : 'N/A'}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="text-sm">
+                      <span className="text-gray-600">Remaining Balance:</span>
+                      <div className="font-medium text-lg">{option.formatted_balance}</div>
+                    </div>
+
+                    {option.can_renew && (
+                      <Button 
+                        onClick={handleMakePayment} 
+                        className="w-full"
+                        variant={option.days_remaining !== null && option.days_remaining <= 7 ? "default" : "outline"}
+                      >
+                        <Smartphone className="h-4 w-4 mr-2" />
+                        Renew via M-Pesa STK Push
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
       </main>
 
       {/* Modal Components */}
       <ProfileSettingsModal
         isOpen={isProfileSettingsOpen}
         onClose={() => setIsProfileSettingsOpen(false)}
-        userType="client"
       />
+
       <PreferencesModal
         isOpen={isPreferencesOpen}
         onClose={() => setIsPreferencesOpen(false)}
-        userType="client"
+      />
+
+      <PaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        onPaymentInitiated={() => {
+          setIsPaymentModalOpen(false)
+          setIsOngoingPaymentModalOpen(true)
+        }}
+      />
+
+      <OngoingPaymentModal
+        isOpen={isOngoingPaymentModalOpen}
+        onClose={() => setIsOngoingPaymentModalOpen(false)}
+        onPaymentCompleted={() => {
+          setIsOngoingPaymentModalOpen(false)
+          // Refresh dashboard data after payment completion
+          loadDashboardData()
+          toast({
+            title: "Payment Completed",
+            description: "Your payment has been processed successfully!",
+          })
+        }}
       />
     </div>
   )

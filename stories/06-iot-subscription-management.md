@@ -66,6 +66,11 @@
 ### Priority: High
 ### Status: 📋 Pending
 
+### Integration Points:
+- **From Story 4**: Receives payment confirmations for device reactivation
+- **To Story 4**: Triggers payment reminders and grace period notifications
+- **Integration**: MQTT communication with IoT devices based on payment status
+
 ---
 
 ## Story 6.5: Appliance Health Monitoring

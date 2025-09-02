@@ -3,7 +3,7 @@
 import { SidebarSeparator } from "@/components/ui/sidebar"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Refrigerator, MapPin, MessageSquare, Mail, Settings, Zap } from "lucide-react"
+import { LayoutDashboard, Refrigerator, MapPin, MessageSquare, Mail, Settings, Zap, Receipt, Wifi, Package } from "lucide-react"
 
 import {
   Sidebar,
@@ -30,11 +30,18 @@ export function AdminSidebar() {
       bgColor: "bg-blue-50 dark:bg-blue-950/20"
     },
     {
+      title: "Products",
+      href: "/admin/dashboard?view=products",
+      icon: Package,
+      color: "text-emerald-500",
+      bgColor: "bg-emerald-50 dark:bg-emerald-950/20"
+    },
+    {
       title: "Units/Freezers",
       href: "/admin/dashboard?view=units",
       icon: Refrigerator,
-      color: "text-emerald-500",
-      bgColor: "bg-emerald-50 dark:bg-emerald-950/20"
+      color: "text-teal-500",
+      bgColor: "bg-teal-50 dark:bg-teal-950/20"
     },
     {
       title: "Locations",
@@ -42,6 +49,13 @@ export function AdminSidebar() {
       icon: MapPin,
       color: "text-purple-500",
       bgColor: "bg-purple-50 dark:bg-purple-950/20"
+    },
+    {
+      title: "Payment Receipts",
+      href: "/admin/dashboard?view=receipts",
+      icon: Receipt,
+      color: "text-indigo-500",
+      bgColor: "bg-indigo-50 dark:bg-indigo-950/20"
     },
     {
       title: "Bulk SMS",
@@ -54,8 +68,8 @@ export function AdminSidebar() {
       title: "Email Marketing",
       href: "/admin/dashboard?view=email-marketing",
       icon: Mail,
-      color: "text-teal-500",
-      bgColor: "bg-teal-50 dark:bg-teal-950/20"
+      color: "text-red-500",
+      bgColor: "bg-red-50 dark:bg-red-950/20"
     },
     {
       title: "Settings",
@@ -63,6 +77,13 @@ export function AdminSidebar() {
       icon: Settings,
       color: "text-gray-500",
       bgColor: "bg-gray-50 dark:bg-gray-950/20"
+    },
+    {
+      title: "MQTT & IoT",
+      href: "/admin/mqtt",
+      icon: Wifi,
+      color: "text-cyan-500",
+      bgColor: "bg-cyan-50 dark:bg-cyan-950/20"
     },
   ]
 

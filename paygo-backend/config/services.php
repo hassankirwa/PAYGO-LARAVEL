@@ -35,4 +35,23 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | M-Pesa Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configuration for M-Pesa STK Push and C2B payments
+    |
+    */
+    'mpesa' => [
+        'consumer_key' => env('CONSUMER_KEY'),
+        'consumer_secret' => env('CONSUMER_SECRET'),
+        'passkey' => env('PASS_KEY'),
+        'shortcode' => env('BUSINESS_SHORTCODE', '174379'),
+        'environment' => env('MPESA_ENV', 'sandbox'),
+        'stk_callback_url' => env('STK_CALLBACK_URL'),
+        'confirmation_url' => env('CONFIRMATION_URL'),
+        'validation_url' => env('VALIDATION_URL'),
+    ],
+
 ];

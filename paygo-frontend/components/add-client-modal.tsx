@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Users, Save, X } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 interface AddClientModalProps {
   isOpen: boolean
@@ -15,6 +16,7 @@ interface AddClientModalProps {
 }
 
 export function AddClientModal({ isOpen, onClose }: AddClientModalProps) {
+  const { toast } = useToast()
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -36,12 +38,20 @@ export function AddClientModal({ isOpen, onClose }: AddClientModalProps) {
     
     // Validate required fields
     if (!formData.firstName || !formData.lastName || !formData.email || !formData.phone || !formData.paymentPlan) {
-      alert("Please fill in all required fields")
+      toast({
+        title: "Required Fields Missing",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      })
       return
     }
 
     // Simulate saving client
-    alert(`Client ${formData.firstName} ${formData.lastName} added successfully!`)
+    toast({
+      title: "Client Added! 👥",
+      description: `Client ${formData.firstName} ${formData.lastName} added successfully!`,
+      variant: "default",
+    })
     
     // Reset form and close modal
     setFormData({

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { CreditCard, Lock } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 interface BankTransferModalProps {
   isOpen: boolean
@@ -22,15 +23,19 @@ export function BankTransferModal({
   paymentAmount,
   paymentType,
 }: BankTransferModalProps) {
+  const { toast } = useToast()
   const [cardholderName, setCardholderName] = useState("")
   const [cardNumber, setCardNumber] = useState("")
   const [expiryDate, setExpiryDate] = useState("")
   const [cvv, setCvv] = useState("")
 
-  const handleBankTransfer = () => {
-    alert(`Processing bank transfer for KSh ${paymentAmount} from card ${cardNumber}...`)
-    // In a real app, you'd call a payment gateway API here
-    onClose() // Close modal after action
+  const handleTransfer = () => {
+    toast({
+      title: "Bank Transfer Processing! 🏦",
+      description: `Processing bank transfer for KSh ${paymentAmount} from card ${cardNumber}...`,
+      variant: "default",
+    })
+    onClose()
   }
 
   return (
@@ -108,7 +113,7 @@ export function BankTransferModal({
               Your card information is encrypted and secure. We accept Visa, MasterCard, and American Express.
             </p>
           </div>
-          <Button onClick={handleBankTransfer} className="w-full bg-emerald-600 hover:bg-emerald-700 py-2.5">
+          <Button onClick={handleTransfer} className="w-full bg-emerald-600 hover:bg-emerald-700 py-2.5">
             Complete Payment
           </Button>
         </div>

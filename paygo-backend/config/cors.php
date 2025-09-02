@@ -19,16 +19,24 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://10.81.234.162:3000'],
+    'allowed_origins' => [
+        'http://localhost:3000', 
+        'http://127.0.0.1:3000', 
+        'http://10.81.234.162:3000',
+        'https://fb8f95b65e4d.ngrok-free.app', // Explicitly allow current ngrok URL
+    ],
 
-    'allowed_origins_patterns' => [],
+    'allowed_origins_patterns' => [
+        '#^https://[a-z0-9\-]+\.ngrok-free\.app$#',  // Allow any ngrok URL (including hyphens)
+        '#^https://[a-z0-9\-]+\.ngrok\.io$#',        // Allow legacy ngrok URLs
+    ],
 
-    'allowed_headers' => ['*'],
+    'allowed_headers' => ['*', 'ngrok-skip-browser-warning', 'authorization', 'content-type', 'x-requested-with'],
 
     'exposed_headers' => [],
 
     'max_age' => 0,
 
-    'supports_credentials' => false,
+    'supports_credentials' => true,
 
 ]; 
