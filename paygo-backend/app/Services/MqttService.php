@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\SystemSetting;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
+use App\Models\Appliance;
 
 class MqttService
 {
@@ -33,12 +34,12 @@ class MqttService
     }
 
     /**
-     * Start a device by sending MQTT command
+     * Manual start a device by sending MQTT command (no subscription data)
      */
-    public function startDevice($deviceId, $subscriptionData = [])
+    public function manualStart($deviceId, $reason = 'manual_activation')
     {
         if (!$this->mqttConfig['is_enabled']) {
-            Log::warning("MQTT is disabled, skipping device start for: {$deviceId}");
+            Log::warning("MQTT is disabled, skipping manual device start for: {$deviceId}");
             return false;
         }
 
@@ -47,16 +48,13 @@ class MqttService
             $payload = [
                 'command' => 'start',
                 'timestamp' => now()->toISOString(),
-                'subscription_id' => $subscriptionData['subscription_id'] ?? null,
-                'subscription_start' => $subscriptionData['start_date'] ?? now()->toISOString(),
-                'subscription_end' => $subscriptionData['end_date'] ?? now()->addMonth()->toISOString(),
-                'client_id' => $subscriptionData['client_id'] ?? null,
+                'reason' => $reason,
             ];
 
             $result = $this->publishMessage($topic, $payload);
             
             if ($result) {
-                Log::info("✅ Device started successfully", [
+                Log::info("✅ Manual device started successfully", [
                     'device_id' => $deviceId,
                     'topic' => $topic,
                     'payload' => $payload
@@ -68,11 +66,11 @@ class MqttService
                 return true;
             }
 
-            Log::error("❌ Failed to start device: {$deviceId}");
+            Log::error("❌ Failed to manually start device: {$deviceId}");
             return false;
 
         } catch (\Exception $e) {
-            Log::error("❌ MQTT Start Device Error", [
+            Log::error("❌ MQTT Manual Start Device Error", [
                 'device_id' => $deviceId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -82,12 +80,12 @@ class MqttService
     }
 
     /**
-     * Stop a device by sending MQTT command
+     * Manual stop a device by sending MQTT command (no subscription update)
      */
-    public function stopDevice($deviceId, $reason = 'subscription_expired')
+    public function manualStop($deviceId, $reason = 'manual_stop')
     {
         if (!$this->mqttConfig['is_enabled']) {
-            Log::warning("MQTT is disabled, skipping device stop for: {$deviceId}");
+            Log::warning("MQTT is disabled, skipping manual device stop for: {$deviceId}");
             return false;
         }
 
@@ -103,7 +101,7 @@ class MqttService
             $result = $this->publishMessage($topic, $payload);
             
             if ($result) {
-                Log::info("✅ Device stopped successfully", [
+                Log::info("✅ Manual device stopped successfully", [
                     'device_id' => $deviceId,
                     'reason' => $reason,
                     'topic' => $topic
@@ -115,11 +113,108 @@ class MqttService
                 return true;
             }
 
-            Log::error("❌ Failed to stop device: {$deviceId}");
+            Log::error("❌ Failed to manually stop device: {$deviceId}");
             return false;
 
         } catch (\Exception $e) {
-            Log::error("❌ MQTT Stop Device Error", [
+            Log::error("❌ MQTT Manual Stop Device Error", [
+                'device_id' => $deviceId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Auto start a device by sending MQTT command (for subscription-based)
+     */
+    public function autoStart($deviceId, $subscriptionData = [])
+    {
+        if (!$this->mqttConfig['is_enabled']) {
+            Log::warning("MQTT is disabled, skipping auto device start for: {$deviceId}");
+            return false;
+        }
+
+        try {
+            $topic = $this->mqttConfig['topic_prefix'] . "/{$deviceId}/control";
+            $payload = [
+                'command' => 'start',
+                'timestamp' => now()->toISOString(),
+                'subscription_id' => $subscriptionData['subscription_id'] ?? null,
+                'subscription_start' => $subscriptionData['start_date'] ?? now()->toISOString(),
+                // Note: Not sending end_date to device; system will send stop via cron
+                'client_id' => $subscriptionData['client_id'] ?? null,
+                'reason' => 'subscription_activated',
+            ];
+
+            $result = $this->publishMessage($topic, $payload);
+            
+            if ($result) {
+                Log::info("✅ Auto device started successfully", [
+                    'device_id' => $deviceId,
+                    'topic' => $topic,
+                    'payload' => $payload
+                ]);
+                
+                // Update appliance status
+                $this->updateApplianceStatus($deviceId, 'active');
+                
+                return true;
+            }
+
+            Log::error("❌ Failed to auto start device: {$deviceId}");
+            return false;
+
+        } catch (\Exception $e) {
+            Log::error("❌ MQTT Auto Start Device Error", [
+                'device_id' => $deviceId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return false;
+        }
+    }
+
+    /**
+     * Auto stop a device by sending MQTT command (for expired subscriptions)
+     */
+    public function autoStop($deviceId, $reason = 'subscription_expired')
+    {
+        if (!$this->mqttConfig['is_enabled']) {
+            Log::warning("MQTT is disabled, skipping auto device stop for: {$deviceId}");
+            return false;
+        }
+
+        try {
+            $topic = $this->mqttConfig['topic_prefix'] . "/{$deviceId}/control";
+            $payload = [
+                'command' => 'stop',
+                'timestamp' => now()->toISOString(),
+                'reason' => $reason,
+                'message' => $this->getStopMessage($reason),
+            ];
+
+            $result = $this->publishMessage($topic, $payload);
+            
+            if ($result) {
+                Log::info("✅ Auto device stopped successfully", [
+                    'device_id' => $deviceId,
+                    'reason' => $reason,
+                    'topic' => $topic
+                ]);
+                
+                // Update appliance status
+                $this->updateApplianceStatus($deviceId, 'suspended');
+                
+                return true;
+            }
+
+            Log::error("❌ Failed to auto stop device: {$deviceId}");
+            return false;
+
+        } catch (\Exception $e) {
+            Log::error("❌ MQTT Auto Stop Device Error", [
                 'device_id' => $deviceId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -253,7 +348,7 @@ class MqttService
     private function updateApplianceStatus($deviceId, $status)
     {
         try {
-            $appliance = \App\Models\Appliance::where('device_id', $deviceId)->first();
+            $appliance = Appliance::where('device_id', $deviceId)->first();
             
             if ($appliance) {
                 $appliance->update([
@@ -345,4 +440,4 @@ class MqttService
             'topic_prefix' => $this->mqttConfig['topic_prefix'],
         ];
     }
-} 
+}

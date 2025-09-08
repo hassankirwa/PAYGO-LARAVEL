@@ -7,8 +7,8 @@ use App\Models\Client;
 use App\Models\Payment;
 use App\Models\PaymentPlan;
 use App\Models\Subscription;
-use App\Jobs\StartDeviceJob;
-use App\Jobs\StopDeviceJob;
+use App\Jobs\AutoStartDeviceJob;
+use App\Jobs\AutoStopDeviceJob;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 
@@ -58,8 +58,8 @@ class SubscriptionManagementService
                 return false;
             }
 
-            // 3. Dispatch device start job
-            $this->dispatchDeviceStartJob($appliance->device_id, $subscription, $payment);
+            // 3. Dispatch auto start device job
+            $this->dispatchAutoStartDeviceJob($appliance->device_id, $subscription, $payment);
 
             DB::commit();
 
@@ -397,9 +397,9 @@ class SubscriptionManagementService
     }
 
     /**
-     * Dispatch device start job
+     * Dispatch auto start device job
      */
-    private function dispatchDeviceStartJob($deviceId, $subscription, $payment)
+    private function dispatchAutoStartDeviceJob($deviceId, $subscription, $payment)
     {
         $subscriptionData = [
             'subscription_id' => $subscription->id,
@@ -415,10 +415,10 @@ class SubscriptionManagementService
             'type' => $payment->payment_type,
         ];
 
-        StartDeviceJob::dispatch($deviceId, $subscriptionData, $paymentData)
-                     ->delay(now()->addSeconds(10)); // Small delay to ensure transaction completion
+        AutoStartDeviceJob::dispatch($deviceId, $subscriptionData, $paymentData)
+                         ->delay(now()->addSeconds(10)); // Small delay to ensure transaction completion
 
-        Log::info("🚀 Device start job dispatched", [
+        Log::info("🚀 Auto start device job dispatched", [
             'device_id' => $deviceId,
             'subscription_id' => $subscription->id
         ]);
@@ -434,9 +434,9 @@ class SubscriptionManagementService
             'reason' => $reason
         ]);
 
-        // Dispatch device stop job
-        StopDeviceJob::dispatch($deviceId, $reason)
-                    ->delay(now()->addMinutes(1)); // Small delay for logging
+        // Dispatch auto stop device job
+        AutoStopDeviceJob::dispatch($deviceId, $reason)
+                        ->delay(now()->addMinutes(1)); // Small delay for logging
 
         return true;
     }
@@ -463,4 +463,4 @@ class SubscriptionManagementService
 
         return $expiredSubscriptions->count();
     }
-} 
+}

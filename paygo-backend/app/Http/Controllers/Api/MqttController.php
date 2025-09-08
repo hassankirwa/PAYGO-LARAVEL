@@ -8,8 +8,8 @@ use App\Models\AdminUser;
 use App\Models\Appliance;
 use App\Models\Subscription;
 use App\Services\MqttService;
-use App\Jobs\StartDeviceJob;
-use App\Jobs\StopDeviceJob;
+use App\Jobs\ManualStartDeviceJob;
+use App\Jobs\ManualStopDeviceJob;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -255,7 +255,6 @@ class MqttController extends Controller
 
             $validator = Validator::make($request->all(), [
                 'device_id' => 'required|string',
-                'duration' => 'nullable|string', // ISO 8601 duration format
                 'reason' => 'nullable|string',
             ]);
 
@@ -268,7 +267,6 @@ class MqttController extends Controller
             }
 
             $deviceId = $request->device_id;
-            $duration = $request->duration ?? 'P1M'; // Default 1 month
             $reason = $request->reason ?? 'manual_activation';
 
             // Find appliance
@@ -281,27 +279,13 @@ class MqttController extends Controller
                 ], 404);
             }
 
-            // Calculate subscription data
-            $startDate = now();
-            $endDate = $startDate->copy()->add(new \DateInterval($duration));
-
-            $subscriptionData = [
-                'start_date' => $startDate->toISOString(),
-                'end_date' => $endDate->toISOString(),
-                'client_id' => $appliance->client_id,
-                'type' => 'manual',
-                'admin_id' => $admin->id,
-                'reason' => $reason,
-            ];
-
-            // Dispatch start device job
-            StartDeviceJob::dispatch($deviceId, $subscriptionData, [])
+            // Dispatch manual start device job (no subscription creation)
+            ManualStartDeviceJob::dispatch($deviceId, $reason, ['admin_id' => $admin->id])
                          ->delay(now()->addSeconds(5));
 
             Log::info('Manual device start requested', [
                 'device_id' => $deviceId,
                 'admin_id' => $admin->id,
-                'duration' => $duration,
                 'reason' => $reason
             ]);
 
@@ -309,7 +293,6 @@ class MqttController extends Controller
                 'success' => true,
                 'message' => 'Device start command sent successfully',
                 'device_id' => $deviceId,
-                'end_date' => $endDate->toISOString(),
             ]);
 
         } catch (\Exception $e) {
@@ -360,8 +343,8 @@ class MqttController extends Controller
                 ], 404);
             }
 
-            // Dispatch stop device job
-            StopDeviceJob::dispatch($deviceId, $reason, ['admin_id' => $admin->id])
+            // Dispatch manual stop device job
+            ManualStopDeviceJob::dispatch($deviceId, $reason, ['admin_id' => $admin->id])
                         ->delay(now()->addSeconds(5));
 
             Log::info('Manual device stop requested', [

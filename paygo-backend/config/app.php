@@ -41,6 +41,11 @@ return [
 
     'debug' => (bool) env('APP_DEBUG', false),
 
+    'providers' => [
+    // ... other providers
+    App\Providers\MqttServiceProvider::class,
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Application URL

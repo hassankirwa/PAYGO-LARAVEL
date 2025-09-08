@@ -1,6 +1,6 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
-// Currency utility functions for KSh (no conversion needed)
+// Currency utility functions for KSh
 export const formatKshPrice = (kshAmount: number): string => {
   return `KSh ${Math.round(kshAmount).toLocaleString()}`;
 };
@@ -63,7 +63,6 @@ export interface ProductCategory {
   created_at: string;
 }
 
-// Laravel Product interface (from API response)
 interface LaravelProduct {
   id: number;
   category_id: number;
@@ -77,9 +76,9 @@ interface LaravelProduct {
   defrost_type: 'Manual' | 'Automatic';
   cash_warranty_months: number;
   paygo_warranty_months: number;
-  price_ksh: string | number; // Changed from price_usd
-  weekly_installment_ksh: string | number; // Changed from weekly_installment_usd
-  monthly_installment_ksh: string | number; // Changed from monthly_installment_usd
+  price_ksh: string | number;
+  weekly_installment_ksh: string | number;
+  monthly_installment_ksh: string | number;
   features: string | string[];
   images: string | string[];
   is_active: boolean;
@@ -88,7 +87,6 @@ interface LaravelProduct {
   category?: ProductCategory;
 }
 
-// Frontend Product interface (after conversion)
 export interface Product {
   id: number;
   category_id: number;
@@ -102,9 +100,9 @@ export interface Product {
   defrost_type: 'Manual' | 'Automatic';
   cash_warranty_months: number;
   paygo_warranty_months: number;
-  price_ksh: number; // Changed from price_usd
-  weekly_installment_ksh: number; // Changed from weekly_installment_usd
-  monthly_installment_ksh?: number; // Changed from monthly_installment_usd
+  price_ksh: number;
+  weekly_installment_ksh: number;
+  monthly_installment_ksh?: number;
   features?: string[];
   images?: string[];
   is_active: boolean;
@@ -174,7 +172,6 @@ export interface AvailabilityResponse {
 
 // Product API functions
 export const productApi = {
-  // Get all products with filters and pagination
   getProducts: async (filters?: ProductFilters): Promise<ProductsResponse> => {
     const response = await apiClient.get('/products', filters);
     if (response.success && response.data?.data) {
@@ -183,7 +180,6 @@ export const productApi = {
     return response;
   },
 
-  // Get single product by ID
   getProduct: async (productId: number): Promise<{ success: boolean; data: Product }> => {
     const response = await apiClient.get(`/products/${productId}`);
     if (response.success && response.data) {
@@ -192,70 +188,22 @@ export const productApi = {
     return response;
   },
 
-  // Get product categories
   getCategories: async (): Promise<{ success: boolean; data: ProductCategory[] }> => {
     return apiClient.get('/products/categories');
   },
 
-  // Get featured products
   getFeaturedProducts: async (): Promise<{ success: boolean; data: Product[] }> => {
     return apiClient.get('/products/featured');
   },
 
-  // Check product availability
   checkAvailability: async (productId: number, data: AvailabilityCheck): Promise<{ success: boolean; data: AvailabilityResponse }> => {
     return apiClient.post(`/products/${productId}/check-availability`, data);
   },
 };
 
-// Helper functions
-export const formatPrice = (price: number): string => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(price);
-};
-
-export const formatCapacity = (capacity: number): string => {
-  return `${capacity}L`;
-};
-
-export const formatPowerConsumption = (watts: number): string => {
-  return `${watts}W`;
-};
-
-export const formatWarranty = (months: number): string => {
-  if (months >= 12) {
-    const years = Math.floor(months / 12);
-    const remainingMonths = months % 12;
-    if (remainingMonths === 0) {
-      return `${years} year${years > 1 ? 's' : ''}`;
-    } else {
-      return `${years} year${years > 1 ? 's' : ''} ${remainingMonths} month${remainingMonths > 1 ? 's' : ''}`;
-    }
-  } else {
-    return `${months} month${months > 1 ? 's' : ''}`;
-  }
-};
-
 // Convert Laravel product format to frontend format
 export const convertLaravelProduct = (laravelProduct: LaravelProduct): Product => {
-  // Ensure features is always an array
   const ensureArray = (value: any): string[] => {
-    if (Array.isArray(value)) return value;
-    if (typeof value === 'string') {
-      try {
-        const parsed = JSON.parse(value);
-        return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  };
-
-  // Ensure images is always an array
-  const ensureImageArray = (value: any): string[] => {
     if (Array.isArray(value)) return value;
     if (typeof value === 'string') {
       try {
@@ -286,7 +234,7 @@ export const convertLaravelProduct = (laravelProduct: LaravelProduct): Product =
     weekly_installment_ksh: Number(laravelProduct.weekly_installment_ksh),
     monthly_installment_ksh: Number(laravelProduct.monthly_installment_ksh || 0),
     features: ensureArray(laravelProduct.features),
-    images: ensureImageArray(laravelProduct.images),
+    images: ensureArray(laravelProduct.images),
     is_active: laravelProduct.is_active,
     created_at: laravelProduct.created_at,
     updated_at: laravelProduct.updated_at,
@@ -426,28 +374,23 @@ export interface PayGoSettings {
 
 // PayGo Plan API functions
 export const paygoApi = {
-  // Get PayGo settings and constraints
   getSettings: async (): Promise<PayGoSettings> => {
     return apiClient.get('/paygo-plans/settings');
   },
 
-  // Get all available plans for a product
   getPlansForProduct: async (productId: number, downPayment?: number): Promise<PayGoPlanResponse> => {
     const params = downPayment ? { down_payment: downPayment } : undefined;
     return apiClient.get(`/products/${productId}/paygo-plans`, params);
   },
 
-  // Calculate custom plan
   calculateCustomPlan: async (productId: number, planData: CustomPlanRequest): Promise<CustomPlanResponse> => {
     return apiClient.post(`/products/${productId}/paygo-plans/calculate`, planData);
   },
 
-  // Compare multiple plans
   comparePlans: async (productId: number, plans: CustomPlanRequest[]): Promise<PlanComparison> => {
     return apiClient.post(`/products/${productId}/paygo-plans/compare`, { plans });
   },
 
-  // Get budget-based recommendations
   getRecommendations: async (productId: number, maxInstallment: number, preferredFrequency?: 'weekly' | 'monthly' | 'quarterly'): Promise<BudgetRecommendations> => {
     return apiClient.post(`/products/${productId}/paygo-plans/recommendations`, {
       max_installment: maxInstallment,
@@ -455,12 +398,10 @@ export const paygoApi = {
     });
   },
 
-  // Get payment schedule for a plan
   getPaymentSchedule: async (productId: number, planData: CustomPlanRequest) => {
     return apiClient.post(`/products/${productId}/paygo-plans/schedule`, planData);
   },
 
-  // Validate plan parameters
   validateParameters: async (params: {
     base_price: number;
     frequency: 'weekly' | 'monthly' | 'quarterly';
@@ -470,37 +411,6 @@ export const paygoApi = {
     return apiClient.post('/paygo-plans/validate', params);
   },
 };
-
-// PayGo plan helper functions
-export const formatInstallment = (amount: number, frequency: string): string => {
-  const formatted = formatKshPrice(amount);
-  return `${formatted}/${frequency === 'weekly' ? 'week' : frequency === 'monthly' ? 'month' : 'quarter'}`;
-};
-
-export const formatDuration = (months: number): string => {
-  if (months >= 12) {
-    const years = Math.floor(months / 12);
-    const remainingMonths = months % 12;
-    if (remainingMonths === 0) {
-      return `${years} year${years > 1 ? 's' : ''}`;
-    } else {
-      return `${years}y ${remainingMonths}m`;
-    }
-  } else {
-    return `${months} month${months > 1 ? 's' : ''}`;
-  }
-};
-
-export const formatFrequency = (frequency: string): string => {
-  return frequency.charAt(0).toUpperCase() + frequency.slice(1);
-};
-
-export const calculateDownPaymentRange = (price: number, minPercentage: number, maxPercentage: number) => {
-  return {
-    min: price * (minPercentage / 100),
-    max: price * (maxPercentage / 100),
-  };
-}; 
 
 // PayBill Transaction Types
 export interface PaybillTransaction {
@@ -526,7 +436,7 @@ export interface PaybillTransaction {
   appliance_id?: number;
   payment_order_id?: number;
   payment_plan_id?: number;
-  mpesa_receipt_number?: string; // Added missing field
+  mpesa_receipt_number?: string;
 }
 
 export interface PaybillInfo {
@@ -606,224 +516,15 @@ export interface PaybillAnalytics {
 }
 
 // PayBill API functions
-// Receipt API functions
-export const receiptApi = {
-  // Get customer receipts (existing - for search by phone/email)
-  getCustomerReceipts: async (phone?: string, email?: string) => {
-    try {
-      const params = new URLSearchParams()
-      if (phone) params.append('phone', phone)
-      if (email) params.append('email', email)
-      
-      const response = await fetch(`${API_BASE_URL}/receipts?${params}`)
-      const data = await response.json()
-      
-      return data
-    } catch (error) {
-      console.error('Failed to get customer receipts:', error)
-      return { success: false, error: 'Failed to load receipts' }
-    }
-  },
-
-  // NEW: Get receipts for authenticated client
-  getClientReceipts: async (params?: {
-    page?: number
-    per_page?: number
-    sort_by?: string
-    sort_direction?: 'asc' | 'desc'
-  }) => {
-    try {
-      const token = localStorage.getItem('auth_token')
-      if (!token) {
-        return { success: false, error: 'Authentication required' }
-      }
-
-      const urlParams = new URLSearchParams()
-      if (params?.page) urlParams.append('page', params.page.toString())
-      if (params?.per_page) urlParams.append('per_page', params.per_page.toString())
-      if (params?.sort_by) urlParams.append('sort_by', params.sort_by)
-      if (params?.sort_direction) urlParams.append('sort_direction', params.sort_direction)
-
-      const response = await fetch(`${API_BASE_URL}/client/receipts?${urlParams}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Failed to get client receipts:', error)
-      return { success: false, error: 'Failed to load your receipts' }
-    }
-  },
-
-  // Get receipt by receipt number
-  getReceipt: async (receiptNumber: string) => {
-    return apiClient.get(`/receipts/${receiptNumber}`);
-  },
-
-  // Download receipt
-  downloadReceipt: async (receiptNumber: string) => {
-    return apiClient.get(`/receipts/${receiptNumber}/download`);
-  },
-
-  // Preview receipt PDF
-  previewReceipt: async (receiptNumber: string) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/receipts/${receiptNumber}/preview`)
-      
-      if (response.ok) {
-        // Get the PDF blob
-        const blob = await response.blob()
-        
-        // Create URL for PDF viewer
-        const url = window.URL.createObjectURL(blob)
-        
-        // Open in new tab/window
-        window.open(url, '_blank')
-        
-        return { success: true, message: 'Receipt opened for preview' }
-      } else {
-        const errorData = await response.json()
-        return { success: false, error: errorData.error || 'Failed to preview receipt' }
-      }
-    } catch (error) {
-      console.error('Failed to preview receipt:', error)
-      return { success: false, error: 'Failed to preview receipt' }
-    }
-  },
-
-  // Get all receipts for admin (with pagination and filtering)
-  getAllReceipts: async (params?: {
-    page?: number
-    per_page?: number
-    search?: string
-    status?: string
-    payment_type?: string
-    sort_by?: string
-    sort_direction?: 'asc' | 'desc'
-  }) => {
-    try {
-      const token = localStorage.getItem('auth_token')
-      if (!token) {
-        return { success: false, error: 'Authentication required' }
-      }
-
-      const urlParams = new URLSearchParams()
-      if (params?.page) urlParams.append('page', params.page.toString())
-      if (params?.per_page) urlParams.append('per_page', params.per_page.toString())
-      if (params?.search) urlParams.append('search', params.search)
-      if (params?.status && params.status !== 'all') urlParams.append('status', params.status)
-      if (params?.payment_type && params.payment_type !== 'all') urlParams.append('payment_type', params.payment_type)
-      if (params?.sort_by) urlParams.append('sort_by', params.sort_by)
-      if (params?.sort_direction) urlParams.append('sort_direction', params.sort_direction)
-
-      const response = await fetch(`${API_BASE_URL}/admin/receipts?${urlParams}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Failed to get all receipts:', error)
-      return { success: false, error: 'Failed to load receipts' }
-    }
-  },
-
-  // NEW: Update receipt status (admin)
-  updateReceiptStatus: async (receiptNumber: string, status: string, notes?: string) => {
-    try {
-      const token = localStorage.getItem('auth_token')
-      if (!token) {
-        return { success: false, error: 'Authentication required' }
-      }
-
-      const response = await fetch(`${API_BASE_URL}/admin/receipts/${receiptNumber}/status`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          status,
-          notes: notes || undefined
-        })
-      })
-
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Failed to update receipt status:', error)
-      return { success: false, error: 'Failed to update receipt status' }
-    }
-  },
-
-  // NEW: Bulk update receipt statuses (admin)
-  bulkUpdateStatus: async (receiptNumbers: string[], status: string, notes?: string) => {
-    try {
-      const token = localStorage.getItem('auth_token')
-      if (!token) {
-        return { success: false, error: 'Authentication required' }
-      }
-
-      const response = await fetch(`${API_BASE_URL}/admin/receipts/bulk-status`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          receipt_numbers: receiptNumbers,
-          status,
-          notes: notes || undefined
-        })
-      })
-
-      const data = await response.json()
-      return data
-    } catch (error) {
-      console.error('Failed to bulk update receipt statuses:', error)
-      return { success: false, error: 'Failed to bulk update receipt statuses' }
-    }
-  },
-};
-
-// Payment Services API functions
-export const paymentServicesApi = {
-  // Check payment order status including receipt and plan activation
-  checkPaymentOrderStatus: async (orderReference: string) => {
-    return apiClient.get(`/payment-orders/${orderReference}/status`);
-  },
-
-  // Get plan activation status
-  getPlanActivationStatus: async (orderReference: string) => {
-    return apiClient.get(`/payment-orders/${orderReference}/plan-status`);
-  },
-
-  // Get SMS notification status
-  getSmsNotificationStatus: async (orderReference: string) => {
-    return apiClient.get(`/payment-orders/${orderReference}/sms-status`);
-  },
-};
-
 export const paybillApi = {
-
-  // Check payment status for a specific device (dashboard use - requires auth)
   checkPaymentStatus: async (deviceId: string): Promise<{ success: boolean; data: PaybillStatus }> => {
     return apiClient.get(`/client/paybill-transactions?device_id=${deviceId}&limit=1`);
   },
 
-  // Get live transaction status by transaction ID
   getLiveTransactionStatus: async (transactionId: string): Promise<{ success: boolean; data: PaybillTransaction }> => {
     return apiClient.get(`/client/paybill-transactions/${transactionId}`);
   },
 
-  // Poll for transaction status updates for dashboard (client-specific)
   pollTransactionStatus: async (clientId: number, params?: {
     device_id?: string;
     since?: string;
@@ -832,7 +533,6 @@ export const paybillApi = {
     return apiClient.get(`/client/paybill-transactions`, params);
   },
 
-  // Get client's PayBill transactions (protected endpoint)
   getTransactions: async (params?: {
     status?: string;
     payment_type?: string;
@@ -870,9 +570,6 @@ export const paybillApi = {
     return response.json();
   },
 
-
-
-  // Get specific transaction details (protected endpoint)
   getTransactionDetail: async (transactionId: number, token?: string): Promise<{ success: boolean; data: PaybillTransaction }> => {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -895,7 +592,6 @@ export const paybillApi = {
     return response.json();
   },
 
-  // Get transaction summary for client dashboard
   getTransactionSummary: async (params?: {
     status?: string;
     payment_type?: string;
@@ -931,7 +627,6 @@ export const paybillApi = {
     return response.json();
   },
 
-  // Get PayBill analytics (admin endpoint)
   getAnalytics: async (params?: {
     days?: string;
     client_id?: number;
@@ -966,7 +661,6 @@ export const paybillApi = {
     return response.json();
   },
 
-  // Simulate PayBill payment (testing endpoint)
   simulate: async (data: {
     amount: number;
     device_id: string;
@@ -976,7 +670,6 @@ export const paybillApi = {
     return apiClient.post('/paybill/simulate', data);
   },
 
-  // Reprocess failed transaction (admin endpoint)
   reprocessTransaction: async (transactionId: number, token?: string): Promise<{ success: boolean; data: PaybillTransaction }> => {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -999,7 +692,6 @@ export const paybillApi = {
     return response.json();
   },
 
-  // Bulk process transactions (admin endpoint)
   bulkProcessTransactions: async (data: {
     transaction_ids: number[];
     action: 'process' | 'reject' | 'reprocess';
@@ -1027,12 +719,10 @@ export const paybillApi = {
     return response.json();
   },
 
-  // Get verification status for a transaction
   getVerificationStatus: async (transactionId: string): Promise<{ success: boolean; data: any }> => {
     return apiClient.get(`/paybill/verification-status/${transactionId}`);
   },
 
-  // Verify payment manually (admin endpoint)
   verifyPayment: async (transactionId: string, token?: string): Promise<{ success: boolean; data: any }> => {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -1055,7 +745,6 @@ export const paybillApi = {
     return response.json();
   },
 
-  // Client-facing validation endpoint (no auth required)
   validatePayment: async (validationData: {
     TransactionType: string;
     TransID: string;
@@ -1083,7 +772,6 @@ export const paybillApi = {
     return response.json();
   },
 
-  // Client-facing confirmation endpoint (no auth required)
   confirmPayment: async (confirmationData: {
     TransactionType: string;
     TransID: string;
@@ -1111,7 +799,6 @@ export const paybillApi = {
     return response.json();
   },
 
-  // Poll for payment success based on device ID and amount (no auth required)
   pollForPaymentSuccess: async (deviceId: string, expectedAmount: number, maxAttempts: number = 24): Promise<{
     success: boolean;
     transactionId?: string;
@@ -1119,7 +806,6 @@ export const paybillApi = {
   }> => {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        // Check if a successful transaction exists for this device and amount
         const response = await fetch(`${API_BASE_URL}/client/validation`, {
           method: 'POST',
           headers: {
@@ -1150,7 +836,6 @@ export const paybillApi = {
           }
         }
 
-        // Wait 10 seconds before next attempt (total 4 minutes for 24 attempts)
         if (attempt < maxAttempts) {
           await new Promise(resolve => setTimeout(resolve, 10000));
         }
@@ -1170,104 +855,185 @@ export const paybillApi = {
       message: 'Payment not detected within timeout period'
     };
   },
-
-  // Note: Business info comes from static config (same as config/mpesa.php)
-  // Note: Payment status uses existing device monitoring pattern
 };
 
-// Ongoing Payment API functions
-export const ongoingPaymentApi = {
-  // Get client's payment plan details
-  getPaymentPlanDetails: async () => {
-    const response = await fetch(`${API_BASE_URL}/ongoing-payments/plan-details`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-      },
-    });
+// Subscription-related types
+export interface Subscription {
+  id: number;
+  client_id: number;
+  appliance_id: number;
+  payment_plan_id?: number;
+  activation_payment_id: number;
+  device_id: string;
+  subscription_type: 'paygo' | 'full_purchase';
+  status: 'active' | 'expired' | 'suspended';
+  start_date: string;
+  end_date: string;
+  reactivated_at?: string;
+}
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch payment plan details');
-    }
+export interface SubscriptionResponse {
+  success: boolean;
+  data: {
+    subscription: Subscription;
+    appliance: {
+      id: number;
+      device_id: string;
+      product_id: number;
+      client_id: number;
+      unit_id: string;
+      serial_number: string;
+      status: string;
+      installation_location: string;
+      is_active: boolean;
+    };
+    client: {
+      id: number;
+      name: string;
+      email: string;
+      phone: string;
+      status: string;
+      payment_status: string;
+      registration_source: string;
+      kyc_status: string;
+    };
+  };
+}
 
-    return response.json();
-  },
+// Subscription API functions
+export const subscriptionApi = {
+  // Process a payment and create/extend subscription
+  processPayment: async (paymentData: {
+    customer_phone: string;
+    customer_email?: string;
+    customer_name: string;
+    product_id: number;
+    paid_amount: number;
+    product_price: number;
+    payment_type: 'down_payment' | 'installment' | 'full_payment';
+    plan_type?: 'weekly' | 'bi_weekly' | 'monthly' | 'quarterly';
+    installment_amount?: number;
+  }, token: string): Promise<SubscriptionResponse> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
 
-  // Check payment status by reference number
-  checkPaymentStatus: async (referenceNumber: string, paymentMethod: string) => {
-    const response = await fetch(`${API_BASE_URL}/ongoing-payments/check-status`, {
+    const response = await fetch(`${API_BASE_URL}/subscriptions/process-payment`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-      },
-      body: JSON.stringify({
-        reference_number: referenceNumber,
-        payment_method: paymentMethod
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to check payment status');
-    }
-
-    return response.json();
-  },
-
-  // Record manual payment
-  recordManualPayment: async (paymentData: {
-    payment_method: string;
-    amount: number;
-    reference_number: string;
-    payment_date: string;
-    notes?: string;
-  }) => {
-    const response = await fetch(`${API_BASE_URL}/ongoing-payments/record-manual`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-      },
+      headers,
       body: JSON.stringify(paymentData),
     });
 
     if (!response.ok) {
-      throw new Error('Failed to record payment');
+      throw new Error(`Failed to process payment: ${response.statusText}`);
     }
 
     return response.json();
   },
 
-  // Get payment history
-  getPaymentHistory: async (page = 1, perPage = 15, status = 'all') => {
-    const params = new URLSearchParams({
-      page: page.toString(),
-      per_page: perPage.toString(),
-      status: status
-    });
+  // Get subscription details by device ID
+  getSubscriptionByDevice: async (deviceId: string, token: string): Promise<SubscriptionResponse> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
 
-    const response = await fetch(`${API_BASE_URL}/ongoing-payments/history?${params}`, {
+    const response = await fetch(`${API_BASE_URL}/subscriptions/device/${deviceId}`, {
       method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-        'Content-Type': 'application/json',
-        'ngrok-skip-browser-warning': 'true',
-      },
+      headers,
     });
 
     if (!response.ok) {
-      throw new Error('Failed to fetch payment history');
+      throw new Error(`Failed to fetch subscription: ${response.statusText}`);
     }
 
     return response.json();
+  },
+
+  // Check for expired subscriptions
+  checkExpiredSubscriptions: async (token: string): Promise<{ success: boolean; data: { count: number } }> => {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    };
+
+    const response = await fetch(`${API_BASE_URL}/subscriptions/check-expired`, {
+      method: 'POST',
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to check expired subscriptions: ${response.statusText}`);
+    }
+
+    return response.json();
+  },
+};
+
+// Helper functions
+export const formatPrice = (price: number): string => {
+  return new Intl.NumberFormat('en-KE', {
+    style: 'currency',
+    currency: 'KES',
+  }).format(price);
+};
+
+export const formatCapacity = (capacity: number): string => {
+  return `${capacity}L`;
+};
+
+export const formatPowerConsumption = (watts: number): string => {
+  return `${watts}W`;
+};
+
+export const formatWarranty = (months: number): string => {
+  if (months >= 12) {
+    const years = Math.floor(months / 12);
+    const remainingMonths = months % 12;
+    if (remainingMonths === 0) {
+      return `${years} year${years > 1 ? 's' : ''}`;
+    } else {
+      return `${years} year${years > 1 ? 's' : ''} ${remainingMonths} month${remainingMonths > 1 ? 's' : ''}`;
+    }
+  } else {
+    return `${months} month${months > 1 ? 's' : ''}`;
   }
 };
 
-// PayBill helper functions
+export const formatInstallment = (amount: number, frequency: string): string => {
+  const formatted = formatKshPrice(amount);
+  return `${formatted}/${frequency === 'weekly' ? 'week' : frequency === 'monthly' ? 'month' : 'quarter'}`;
+};
+
+export const formatDuration = (months: number): string => {
+  if (months >= 12) {
+    const years = Math.floor(months / 12);
+    const remainingMonths = months % 12;
+    if (remainingMonths === 0) {
+      return `${years} year${years > 1 ? 's' : ''}`;
+    } else {
+      return `${years}y ${remainingMonths}m`;
+    }
+  } else {
+    return `${months} month${months > 1 ? 's' : ''}`;
+  }
+};
+
+export const formatFrequency = (frequency: string): string => {
+  return frequency.charAt(0).toUpperCase() + frequency.slice(1);
+};
+
+export const calculateDownPaymentRange = (price: number, minPercentage: number, maxPercentage: number) => {
+  return {
+    min: price * (minPercentage / 100),
+    max: price * (maxPercentage / 100),
+  };
+};
+
 export const formatPaybillAmount = (amount: number): string => {
   return `KSh ${amount.toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
@@ -1339,243 +1105,3 @@ export const formatPaymentType = (type: string): string => {
       return type.charAt(0).toUpperCase() + type.slice(1);
   }
 };
-
-// =======================================================
-// CLIENT DASHBOARD API
-// =======================================================
-
-// Dashboard interfaces
-export interface ClientInfo {
-  id: number;
-  name: string;
-  email: string;
-  phone: string;
-  status: string;
-  registration_date: string;
-}
-
-export interface DashboardSummary {
-  total_subscriptions: number;
-  active_subscriptions: number;
-  expired_subscriptions: number;
-  total_appliances: number;
-  total_paid: number;
-  formatted_total_paid: string;
-  total_balance: number;
-  formatted_total_balance: string;
-  recent_payments_count: number;
-}
-
-export interface DashboardSubscription {
-  id: number;
-  device_id: string;
-  product_name: string;
-  status: string;
-  subscription_type: string;
-  start_date: string;
-  end_date: string;
-  days_remaining: number | null;
-  progress_percentage: number;
-  next_payment_amount: number;
-  next_payment_due: string;
-}
-
-export interface DashboardPayment {
-  receipt_number: string;
-  amount: number;
-  formatted_amount: string;
-  date: string;
-  status: string;
-  method: string;
-}
-
-export interface DashboardAppliance {
-  id: number;
-  device_id: string;
-  product_name: string;
-  status: string;
-  installation_date: string;
-  last_ping: string | null;
-  temperature: string | null;
-  battery_voltage: string | null;
-}
-
-export interface DashboardPaymentPlan {
-  id: number;
-  plan_name: string;
-  frequency: string;
-  total_amount: number;
-  installment_amount: number;
-  total_installments: number;
-  completed_installments: number;
-  progress_percentage: number;
-  next_payment_due: string;
-  remaining_balance: number;
-  status: string;
-}
-
-export interface DashboardStats {
-  client_info: ClientInfo | null;
-  summary: DashboardSummary;
-  subscriptions: DashboardSubscription[];
-  recent_payments: DashboardPayment[];
-  appliances: DashboardAppliance[];
-  payment_plans: DashboardPaymentPlan[];
-}
-
-export interface MpesaTransactionData {
-  id: number;
-  receipt_number: string;
-  amount: number;
-  formatted_amount: string;
-  phone_number: string;
-  result_code: number;
-  result_description: string;
-  transaction_date: string;
-  payment_date: string;
-  status: string;
-  is_successful: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface InternalPaymentData {
-  id: number;
-  amount: number;
-  formatted_amount: string;
-  payment_method: string;
-  payment_reference: string;
-  status: string;
-  payment_date: string;
-  formatted_date: string;
-  notes: string | null;
-  created_at: string;
-}
-
-export interface PaymentDataResponse {
-  mpesa_transactions: MpesaTransactionData[];
-  internal_payments: InternalPaymentData[];
-}
-
-export interface RenewalOption {
-  subscription_id: number;
-  device_id: string;
-  product_name: string;
-  current_status: string;
-  subscription_type: string;
-  next_payment_amount: number;
-  formatted_amount: string;
-  next_payment_due: string;
-  formatted_due_date: string;
-  remaining_balance: number;
-  formatted_balance: string;
-  payment_method: string;
-  can_renew: boolean;
-  end_date: string;
-  days_remaining: number | null;
-}
-
-// Helper function to get auth headers
-const getAuthHeaders = () => {
-  let token = null;
-  
-  // Use the same key as auth service: 'auth_token'
-  if (typeof window !== 'undefined') {
-    token = localStorage.getItem('auth_token');
-    
-    console.log('🔍 Checking for auth token in localStorage...');
-    console.log('auth_token:', token ? 'present' : 'missing');
-    console.log('user_type:', localStorage.getItem('user_type'));
-  }
-  
-  return {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-    'Authorization': token ? `Bearer ${token}` : '',
-    'ngrok-skip-browser-warning': 'true'
-  };
-};
-
-// Dashboard API functions
-export const dashboardApi = {
-  /**
-   * Get comprehensive dashboard statistics
-   */
-  async getStats(): Promise<{ success: boolean; stats: DashboardStats; timestamp: string }> {
-    console.log('🔍 Fetching dashboard stats...');
-    
-    const response = await fetch(`${API_BASE_URL}/client/dashboard/stats`, {
-      method: 'GET',
-      headers: getAuthHeaders(),
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        console.error('❌ Authentication required for dashboard stats');
-        throw new Error('Authentication required. Please log in.');
-      }
-      console.error('❌ Failed to fetch dashboard stats:', response.statusText);
-      throw new Error(`Failed to fetch dashboard stats: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log('✅ Dashboard stats fetched successfully');
-    return data;
-  },
-
-  /**
-   * Get payment data with M-Pesa transaction details
-   */
-  async getPayments(): Promise<{ success: boolean; payments: PaymentDataResponse; summary: any }> {
-    console.log('🔍 Fetching payment data...');
-    
-    const response = await fetch(`${API_BASE_URL}/client/dashboard/payments`, {
-      method: 'GET',
-      headers: getAuthHeaders(),
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        console.error('❌ Authentication required for payment data');
-        throw new Error('Authentication required. Please log in.');
-      }
-      console.error('❌ Failed to fetch payment data:', response.statusText);
-      throw new Error(`Failed to fetch payment data: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log('✅ Payment data fetched successfully');
-    return data;
-  },
-
-  /**
-   * Get subscription renewal options with M-Pesa STK Push
-   */
-  async getRenewalOptions(): Promise<{ 
-    success: boolean; 
-    renewal_options: RenewalOption[]; 
-    payment_method: string;
-    client_phone: string;
-    instructions: string;
-  }> {
-    console.log('🔍 Fetching renewal options...');
-    
-    const response = await fetch(`${API_BASE_URL}/client/dashboard/renewal-options`, {
-      method: 'GET',
-      headers: getAuthHeaders(),
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        console.error('❌ Authentication required for renewal options');
-        throw new Error('Authentication required. Please log in.');
-      }
-      console.error('❌ Failed to fetch renewal options:', response.statusText);
-      throw new Error(`Failed to fetch renewal options: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log('✅ Renewal options fetched successfully');
-    return data;
-  },
-}; 

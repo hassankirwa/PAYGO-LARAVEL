@@ -79,9 +79,52 @@ export interface DeviceStatus {
   };
 }
 
+// Subscription-related types
+export interface Subscription {
+  id: number;
+  client_id: number;
+  appliance_id: number;
+  payment_plan_id?: number;
+  activation_payment_id: number;
+  device_id: string;
+  subscription_type: 'paygo' | 'full_purchase';
+  status: 'active' | 'expired' | 'suspended';
+  start_date: string;
+  end_date: string;
+  reactivated_at?: string;
+}
+
+export interface SubscriptionResponse {
+  success: boolean;
+  data: {
+    subscription: Subscription;
+    appliance: {
+      id: number;
+      device_id: string;
+      product_id: number;
+      client_id: number;
+      unit_id: string;
+      serial_number: string;
+      status: string;
+      installation_location: string;
+      is_active: boolean;
+    };
+    client: {
+      id: number;
+      name: string;
+      email: string;
+      phone: string;
+      status: string;
+      payment_status: string;
+      registration_source: string;
+      kyc_status: string;
+    };
+  };
+}
+
 // API Helper Functions
 const getAuthHeaders = () => {
-  const token = localStorage.getItem('auth_token'); // Use auth_token instead of admin_token
+  const token = localStorage.getItem('auth_token');
   return {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
@@ -156,32 +199,36 @@ export const deviceManagementApi = {
     return handleApiResponse(response);
   },
 
-  // Start device manually
-  startDevice: async (deviceId: string, duration?: string, reason?: string): Promise<{
+  // Start device automatically via subscription
+  autoStartDevice: async (deviceId: string, subscriptionId: number, paymentData: {
+    payment_id: number;
+    amount: number;
+    type: 'down_payment' | 'installment' | 'full_payment';
+  }): Promise<{
     success: boolean;
     message: string;
     device_id: string;
     end_date: string;
   }> => {
-    const response = await fetch(`${API_BASE_URL}/admin/mqtt/devices/start`, {
+    const response = await fetch(`${API_BASE_URL}/admin/mqtt/devices/auto-start`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({
         device_id: deviceId,
-        duration,
-        reason,
+        subscription_id: subscriptionId,
+        payment_data: paymentData,
       }),
     });
     return handleApiResponse(response);
   },
 
-  // Stop device manually
-  stopDevice: async (deviceId: string, reason?: string): Promise<{
+  // Stop device automatically due to subscription expiry
+  autoStopDevice: async (deviceId: string, reason: string = 'subscription_expired'): Promise<{
     success: boolean;
     message: string;
     device_id: string;
   }> => {
-    const response = await fetch(`${API_BASE_URL}/admin/mqtt/devices/stop`, {
+    const response = await fetch(`${API_BASE_URL}/admin/mqtt/devices/auto-stop`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({
@@ -266,6 +313,44 @@ export const deviceManagementApi = {
 
 // Subscription API for client dashboard
 export const subscriptionApi = {
+  // Process a payment and create/extend subscription
+  processPayment: async (paymentData: {
+    customer_phone: string;
+    customer_email?: string;
+    customer_name: string;
+    product_id: number;
+    paid_amount: number;
+    product_price: number;
+    payment_type: 'down_payment' | 'installment' | 'full_payment';
+    plan_type?: 'weekly' | 'bi_weekly' | 'monthly' | 'quarterly';
+    installment_amount?: number;
+  }): Promise<SubscriptionResponse> => {
+    const response = await fetch(`${API_BASE_URL}/subscriptions/process-payment`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(paymentData),
+    });
+    return handleApiResponse(response);
+  },
+
+  // Get subscription details by device ID
+  getSubscriptionByDevice: async (deviceId: string): Promise<SubscriptionResponse> => {
+    const response = await fetch(`${API_BASE_URL}/subscriptions/device/${deviceId}`, {
+      method: 'GET',
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  },
+
+  // Check for expired subscriptions
+  checkExpiredSubscriptions: async (): Promise<{ success: boolean; data: { count: number } }> => {
+    const response = await fetch(`${API_BASE_URL}/subscriptions/check-expired`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+    });
+    return handleApiResponse(response);
+  },
+
   // Get client subscription status
   getClientSubscriptions: async (): Promise<{
     success: boolean;
@@ -290,23 +375,10 @@ export const subscriptionApi = {
       };
     }>;
   }> => {
-    const token = localStorage.getItem('auth_token'); // Use auth_token instead of client_token
-    console.log('🔍 Client token from localStorage:', token ? 'Token exists' : 'No token found');
-    console.log('🌐 Making request to:', `${API_BASE_URL}/client/subscriptions`);
-    
     const response = await fetch(`${API_BASE_URL}/client/subscriptions`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : '',
-        'ngrok-skip-browser-warning': 'true',
-      },
+      headers: getAuthHeaders(),
     });
-    
-    console.log('📡 Response status:', response.status);
-    console.log('📡 Response ok:', response.ok);
-    
     return handleApiResponse(response);
   },
 
@@ -322,14 +394,9 @@ export const subscriptionApi = {
       progress_percentage: number;
     } | null;
   }> => {
-    const token = localStorage.getItem('client_token');
     const response = await fetch(`${API_BASE_URL}/client/subscriptions/${deviceId}/countdown`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': token ? `Bearer ${token}` : '',
-      },
+      headers: getAuthHeaders(),
     });
     return handleApiResponse(response);
   },
@@ -403,4 +470,4 @@ export const mqttUtils = {
     { value: 'payment_overdue', label: 'Payment Overdue' },
     { value: 'subscription_expired', label: 'Subscription Expired' },
   ],
-}; 
+};

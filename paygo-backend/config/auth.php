@@ -48,9 +48,20 @@ return [
             'driver' => 'sanctum',
             'provider' => 'clients',
         ],
+        'api' => [
+            'driver' => 'sanctum',
+            'provider' => 'admins',
+            'hash' => false,
+         ],
         'admin' => [
             'driver' => 'sanctum',
             'provider' => 'admins',
+        ],
+        'providers' => [
+            'users' => [
+                'driver' => 'eloquent',
+                'model' => App\Models\User::class,
+            ],
         ],
     ],
 

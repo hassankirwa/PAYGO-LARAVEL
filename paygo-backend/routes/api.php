@@ -17,6 +17,12 @@ use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\SettingsController;
 use Illuminate\Support\Facades\Hash;
 use App\Http\Controllers\Api\OngoingPaymentController;
+use App\Http\Controllers\DeviceController;
+
+
+Route::prefix('admin/mqtt/devices')->middleware('auth:api')->group(function () {
+    Route::get('/overview', [DeviceController::class, 'getOverview']);
+});
 
 // Test client creation directly
 Route::get('/test-create-client', function () {
@@ -234,17 +240,17 @@ Route::middleware('auth:sanctum')->prefix('client')->group(function () {
     Route::get('/mpesa-transactions', [ClientProfileController::class, 'getMpesaTransactions']);
     Route::get('/payment-orders', [ClientProfileController::class, 'getPaymentOrders']);
     
-    // PayBill Transactions (NEW)
+    // PayBill Transactions
     Route::get('/paybill-transactions', [ClientProfileController::class, 'getPaybillTransactions']);
     Route::get('/paybill-transactions/summary', [ClientProfileController::class, 'getPaybillTransactionSummary']);
     Route::get('/paybill-transactions/{transactionId}', [ClientProfileController::class, 'getPaybillTransaction']);
     
-    // Subscription Management (NEW)
+    // Subscription Management
     Route::get('/subscriptions', [\App\Http\Controllers\Api\Client\SubscriptionController::class, 'index']);
     Route::get('/subscriptions/{deviceId}/countdown', [\App\Http\Controllers\Api\Client\SubscriptionController::class, 'getCountdown']);
     Route::get('/subscriptions/summary', [\App\Http\Controllers\Api\Client\SubscriptionController::class, 'getSummary']);
     
-    // Dashboard Stats & Real-time Data (NEW)
+    // Dashboard Stats & Real-time Data
     Route::get('/dashboard/stats', [\App\Http\Controllers\Api\Client\DashboardController::class, 'getStats']);
     Route::get('/dashboard/payments', [\App\Http\Controllers\Api\Client\DashboardController::class, 'getPayments']);
     Route::get('/dashboard/renewal-options', [\App\Http\Controllers\Api\Client\DashboardController::class, 'getRenewalOptions']);
@@ -269,7 +275,7 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::get('/analytics/devices', [AdminDashboardController::class, 'getDeviceAnalytics']);
     Route::get('/analytics/payments', [AdminDashboardController::class, 'getPaymentAnalytics']);
     
-    // Appliance Management (NEW)
+    // Appliance Management
     Route::get('/appliances', [AdminDashboardController::class, 'getAppliances']);
     Route::get('/appliances/{id}', [AdminDashboardController::class, 'getAppliance']);
     Route::put('/appliances/{id}/status', [AdminDashboardController::class, 'updateApplianceStatus']);
@@ -306,7 +312,6 @@ Route::prefix('paygo-plans')->group(function () {
     Route::post('/validate', [PayGoPlanController::class, 'validateParameters']); // Validate plan parameters
 });
 
-
 // Admin Product Management (Protected routes)
 Route::middleware('auth:sanctum')->prefix('admin/products')->group(function () {
     Route::get('/', [ProductController::class, 'adminIndex']); // List all products for admin (including inactive)
@@ -334,8 +339,6 @@ Route::prefix('mpesa')->group(function () {
     Route::post('create-payment-order', [MpesaController::class, 'createPaymentOrder']); // Create payment order
     Route::post('payment-order-status', [MpesaController::class, 'getPaymentOrderStatus']); // Get payment order status
     
-
-    
     // Paybill Validation and Confirmation (called by Safaricom)
     Route::post('validation', [MpesaC2BController::class, 'handleValidation']); // M-Pesa paybill validation callback
     Route::post('confirmation', [MpesaC2BController::class, 'processPaymentsReceived']); // M-Pesa paybill confirmation callback
@@ -355,9 +358,6 @@ Route::prefix('mpesa')->group(function () {
     Route::get('test-endpoints', [App\Http\Controllers\Api\MpesaUrlRegistrationController::class, 'testEndpoints']);
     Route::get('registration-status', [App\Http\Controllers\Api\MpesaUrlRegistrationController::class, 'getRegistrationStatus']);
 });
-
-// Note: PayBill business info comes from config/mpesa.php
-// Note: Payment status checked via existing paybill-transactions endpoints
 
 // ==============================================
 // VISA/MASTERCARD PAYMENT ROUTES
@@ -409,12 +409,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('admin/mqtt')->group(function () {
         Route::get('/config', [\App\Http\Controllers\Api\MqttController::class, 'getConfig']); // Get MQTT settings
         Route::post('/config', [\App\Http\Controllers\Api\MqttController::class, 'updateConfig']); // Update MQTT settings
-        Route::post('/test-connection', [\App\Http\Controllers\Api\MqttController::class, 'testConnection']); // Test MQTT connection
+
         
         // Device Management
-        Route::get('/devices/overview', [\App\Http\Controllers\Api\MqttController::class, 'getDeviceOverview']); // Device statistics
-        Route::post('/devices/start', [\App\Http\Controllers\Api\MqttController::class, 'startDevice']); // Manual start device
-        Route::post('/devices/stop', [\App\Http\Controllers\Api\MqttController::class, 'stopDevice']); // Manual stop device
+        Route::get('/devices-overview', [\App\Http\Controllers\Api\MqttController::class, 'getDeviceOverview']); // Device statistics
+        Route::post('/devices/manual-start', [\App\Http\Controllers\Api\MqttController::class, 'startDevice']); // Manual start device
+        Route::post('/devices/manual-stop', [\App\Http\Controllers\Api\MqttController::class, 'stopDevice']); // Manual stop device
         Route::post('/devices/status', [\App\Http\Controllers\Api\MqttController::class, 'checkDeviceStatus']); // Check device status
         
         // Device Creation & Registration
@@ -422,23 +422,23 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/devices/products', [\App\Http\Controllers\Api\MqttController::class, 'getProductsForDevice']); // Get products list
         Route::get('/devices/clients', [\App\Http\Controllers\Api\MqttController::class, 'getClientsForDevice']); // Get clients list
     });
-}); 
+});
 
 // ==============================================
 // M-PESA C2B Tutorial ROUTES
 // ==============================================
-
-
-    Route::post('sts/access/token', [MpesaC2BController::class, 'generateAccessToken']);
-    Route::post('sts/password/generate', [MpesaC2BController::class, 'generatePassword']);
-    Route::post('sts/confirmation', [MpesaC2BController::class, 'mpesaConfirmation']);
-    Route::post('sts/validation', [MpesaC2BController::class, 'mpesaValidation']);
-    Route::post('sts/register/urls', [MpesaC2BController::class, 'mpesaRegisterUrls']);
+Route::prefix('sts')->group(function () {
+    Route::post('access/token', [MpesaC2BController::class, 'generateAccessToken']);
+    Route::post('password/generate', [MpesaC2BController::class, 'generatePassword']);
+    Route::post('confirmation', [MpesaC2BController::class, 'mpesaConfirmation']);
+    Route::post('validation', [MpesaC2BController::class, 'mpesaValidation']);
+    Route::post('register/urls', [MpesaC2BController::class, 'mpesaRegisterUrls']);
     
     // C2B Testing and Simulation Routes
-    Route::post('sts/simulate-payment', [MpesaC2BController::class, 'simulateC2BPayment']);
-    Route::get('sts/recent-transactions', [MpesaC2BController::class, 'getRecentTransactions']);
-    Route::any('sts/debug-request', [MpesaC2BController::class, 'debugRequest']); // Debug any HTTP method
+    Route::post('simulate-payment', [MpesaC2BController::class, 'simulateC2BPayment']);
+    Route::get('recent-transactions', [MpesaC2BController::class, 'getRecentTransactions']);
+    Route::any('debug-request', [MpesaC2BController::class, 'debugRequest']); // Debug any HTTP method
+});
 
 // ==============================================
 // RECEIPT ROUTES
@@ -461,5 +461,3 @@ Route::middleware('auth:sanctum')->prefix('admin')->group(function () {
     Route::put('/receipts/{receiptNumber}/status', [\App\Http\Controllers\Api\ReceiptController::class, 'updateReceiptStatus']);
     Route::put('/receipts/bulk-status', [\App\Http\Controllers\Api\ReceiptController::class, 'bulkUpdateStatus']);
 });
-
-
